@@ -1,0 +1,33 @@
+{
+    "name": "sg-ia/api",
+    "description": "API para serious game de alfabetización en cáncer de colon",
+    "license": "proprietary",
+    "type": "project",
+    "require": {
+      "php": ">=8.1"
+    },
+    "autoload": {
+      "psr-4": {
+        "Src\\": "src/",
+        "Src\\Database\\": "src/Database/",
+        "Src\\Utils\\": "src/Utils/",
+        "Src\\Controllers\\": "src/Controllers/",
+        "Src\\Repositories\\": "src/Repositories/",
+        "Src\\Services\\": "src/Services/",
+        "Src\\Models\\": "src/Models/",
+        "Src\\Middleware\\": "src/Middleware/"
+      }
+    },
+    "scripts": {
+      "post-install-cmd": ["@composer dump-autoload -o"],
+      "post-update-cmd": ["@composer dump-autoload -o"]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
+  

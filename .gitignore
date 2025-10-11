@@ -1,0 +1,22 @@
+# Composer
+/vendor/
+
+# Entornos y secretos
+.env
+config/*.local.php
+config/*.secrets.php
+
+# IDE / SO
+/.vscode/
+/.idea/
+.DS_Store
+Thumbs.db
+
+# Logs y caché
+/storage/*
+!/storage/.gitkeep
+*.log
+
+# Dump locales
+/db/dumps/*
+!/db/dumps/README.md
