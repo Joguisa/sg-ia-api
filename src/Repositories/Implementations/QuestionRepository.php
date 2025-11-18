@@ -1,5 +1,5 @@
 <?php
-namespace Src\Repositories;
+namespace Src\Repositories\Implementations;
 use Src\Database\Connection;
 use Src\Models\Question;
 use Src\Repositories\Interfaces\QuestionRepositoryInterface;

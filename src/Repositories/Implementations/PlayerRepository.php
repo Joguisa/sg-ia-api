@@ -1,5 +1,5 @@
 <?php
-namespace Src\Repositories;
+namespace Src\Repositories\Implementations;
 use PDO;
 use Src\Database\Connection;
 use Src\Models\Player;

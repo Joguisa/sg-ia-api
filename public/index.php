@@ -6,7 +6,7 @@ use Src\Utils\Router;
 use Src\Utils\Response;
 use Src\Middleware\CorsMiddleware;
 
-use Src\Repositories\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository};
+use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository};
 use Src\Repositories\Interfaces\{PlayerRepositoryInterface,QuestionRepositoryInterface,SessionRepositoryInterface,AnswerRepositoryInterface};
 
 use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController};

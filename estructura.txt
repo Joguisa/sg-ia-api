@@ -1,0 +1,81 @@
+Listado de rutas de carpetas
+El número de serie del volumen es 5002-57D2
+C:.
+¦   .env
+¦   .env.example
+¦   .gitignore
+¦   composer.json
+¦   composer.lock
+¦   estructura.txt
+¦   README.md
+¦   
++---config
+¦       config.php
+¦       database.php
+¦       
++---db
+¦   +---schema
+¦           001_sg-ia-db.sql
+¦           002_seed_data.sql
+¦           
++---public
+¦       .htaccess
+¦       index.php
+¦       
++---src
+¦   +---Controllers
+¦   ¦       GameController.php
+¦   ¦       PlayerController.php
+¦   ¦       QuestionController.php
+¦   ¦       StatisticsController.php
+¦   ¦       
+¦   +---Database
+¦   ¦       Connection.php
+¦   ¦       
+¦   +---Middleware
+¦   ¦       CorsMiddleware.php
+¦   ¦       
+¦   +---Models
+¦   ¦       GameSession.php
+¦   ¦       Player.php
+¦   ¦       PlayerAnswer.php
+¦   ¦       Question.php
+¦   ¦       
+¦   +---Repositories
+¦   ¦   +---Implementations
+¦   ¦   ¦       AnswerRepository.php
+¦   ¦   ¦       PlayerRepository.php
+¦   ¦   ¦       QuestionRepository.php
+¦   ¦   ¦       SessionRepository.php
+¦   ¦   ¦       
+¦   ¦   +---Interfaces
+¦   ¦           AnswerRepositoryInterface.php
+¦   ¦           PlayerRepositoryInterface.php
+¦   ¦           QuestionRepositoryInterface.php
+¦   ¦           SessionRepositoryInterface.php
+¦   ¦           
+¦   +---Services
+¦   ¦       AIEngine.php
+¦   ¦       GameService.php
+¦   ¦       ValidationService.php
+¦   ¦       
+¦   +---Utils
+¦           Response.php
+¦           Router.php
+¦           
++---vendor
+    ¦   autoload.php
+    ¦   
+    +---composer
+            autoload_classmap.php
+            autoload_namespaces.php
+            autoload_psr4.php
+            autoload_real.php
+            autoload_static.php
+            ClassLoader.php
+            installed.json
+            installed.php
+            InstalledVersions.php
+            LICENSE
+            platform_check.php
+            
