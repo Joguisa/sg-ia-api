@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(php -l:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(php:*)"
     ],
     "deny": [],
     "ask": []
