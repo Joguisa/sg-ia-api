@@ -127,7 +127,8 @@ CREATE TABLE game_sessions (
   CONSTRAINT ck_gs_diff  CHECK (current_difficulty >= 1.00 AND current_difficulty <= 5.00),
   CONSTRAINT ck_gs_lives CHECK (lives >= 0 AND lives <= 9),
   CONSTRAINT fk_gs_player FOREIGN KEY (player_id) REFERENCES players(id),
-  KEY ix_gs_player_status (player_id, status, started_at)
+  KEY ix_gs_player_status (player_id, status, started_at),
+  KEY idx_player_current_difficulty (player_id, current_difficulty) -- Optimización Motor IA
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================
