@@ -16,7 +16,11 @@ return [
   ],
   'cors' => [
     'origins' => ['http://localhost:4200'],
-    'methods' => ['GET','POST','PUT','DELETE','OPTIONS'],
+    'methods' => ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
     'headers' => ['Content-Type','Authorization']
+  ],
+  'gemini' => [
+    'api_key' => getenv('GEMINI_API_KEY') ?: '',
+    'enabled' => (bool)(getenv('GEMINI_ENABLED') ?: false)
   ]
 ];

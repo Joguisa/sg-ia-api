@@ -3,6 +3,7 @@ namespace Src\Services;
 
 use Src\Repositories\Interfaces\{SessionRepositoryInterface,QuestionRepositoryInterface,AnswerRepositoryInterface};
 use Src\Repositories\Interfaces\PlayerRepositoryInterface;
+use Src\Services\AI\GenerativeAIInterface;
 
 final class GameService {
   public function __construct(
@@ -10,7 +11,8 @@ final class GameService {
     private QuestionRepositoryInterface $questions,
     private AnswerRepositoryInterface $answers,
     private PlayerRepositoryInterface $players,
-    private AIEngine $ai
+    private AIEngine $ai,
+    private ?GenerativeAIInterface $generativeAi = null
   ) {}
 
   public function startSession(int $playerId, float $startDifficulty = 1.0): array {
@@ -29,17 +31,114 @@ final class GameService {
     ];
   }
 
+  /**
+   * Obtiene la siguiente pregunta para el jugador.
+   * Si no hay preguntas existentes para esa dificultad, genera una con IA.
+   *
+   * @param int $categoryId ID de la categoría
+   * @param int $difficulty Dificultad requerida (1-5)
+   * @return array|null Array con datos de la pregunta o null si no se puede generar
+   */
   public function nextQuestion(int $categoryId, int $difficulty): ?array {
     if ($difficulty < 1 || $difficulty > 5) {
       throw new \RangeError("Dificultad debe estar entre 1 y 5");
     }
 
+    // Buscar pregunta existente y verificada
     $q = $this->questions->getActiveByDifficulty($categoryId, $difficulty);
-    return $q ? [
-      'id' => $q->id,
-      'statement' => $q->statement,
-      'difficulty' => $q->difficulty
-    ] : null;
+
+    if ($q) {
+      return [
+        'id' => $q->id,
+        'statement' => $q->statement,
+        'difficulty' => $q->difficulty
+      ];
+    }
+
+    // Si no hay preguntas y no tenemos IA configurada, retornar null
+    if (!$this->generativeAi) {
+      return null;
+    }
+
+    // Generar pregunta con IA
+    return $this->generateAndSaveQuestion($categoryId, $difficulty);
+  }
+
+  /**
+   * Genera una pregunta usando IA Generativa y la persiste en BD.
+   *
+   * @param int $categoryId ID de la categoría
+   * @param int $difficulty Nivel de dificultad
+   * @return array|null Datos de la pregunta generada o null si falla
+   */
+  private function generateAndSaveQuestion(int $categoryId, int $difficulty): ?array {
+    try {
+      // Obtener nombre de la categoría (asumiendo que existe, si no lanzará excepción)
+      $categoryName = $this->getCategoryName($categoryId);
+
+      // Generar pregunta con Gemini
+      $generatedData = $this->generativeAi->generateQuestion($categoryName, $difficulty);
+
+      // Crear pregunta en BD marcada como generada por IA y no verificada por admin
+      $questionId = $this->questions->create([
+        'statement' => $generatedData['statement'],
+        'difficulty' => $difficulty,
+        'category_id' => $categoryId,
+        'is_active' => 1,
+        'is_ai_generated' => true,
+        'admin_verified' => false
+      ]);
+
+      // Guardar opciones
+      $this->questions->saveOptions($questionId, $generatedData['options']);
+
+      // Guardar explicación
+      $this->questions->saveExplanation(
+        $questionId,
+        $generatedData['explanation'],
+        $generatedData['source_ref'] ?? null
+      );
+
+      return [
+        'id' => $questionId,
+        'statement' => $generatedData['statement'],
+        'difficulty' => $difficulty,
+        'is_ai_generated' => true,
+        'admin_verified' => false
+      ];
+    } catch (\Throwable $e) {
+      // Log del error (implementar según tu sistema de logging)
+      error_log("Error generando pregunta con IA: " . $e->getMessage());
+      return null;
+    }
+  }
+
+  /**
+   * Obtiene el nombre de una categoría por ID.
+   * Simplificado: asume que existe la tabla y columna.
+   *
+   * @param int $categoryId
+   * @return string Nombre de la categoría
+   * @throws \RuntimeException Si la categoría no existe
+   */
+  private function getCategoryName(int $categoryId): string {
+    // Esta es una implementación básica. Idealmente tendría un RepositoryInterface
+    // para categories, pero por ahora usamos una query directa.
+    $pdo = $this->questions->getPdo() ?? null;
+
+    if (!$pdo) {
+      throw new \RuntimeException("No se puede acceder a la base de datos para obtener la categoría");
+    }
+
+    $st = $pdo->prepare("SELECT name FROM question_categories WHERE id = :id");
+    $st->execute([':id' => $categoryId]);
+    $r = $st->fetch();
+
+    if (!$r) {
+      throw new \RuntimeException("Categoría $categoryId no existe");
+    }
+
+    return $r['name'];
   }
 
   /**

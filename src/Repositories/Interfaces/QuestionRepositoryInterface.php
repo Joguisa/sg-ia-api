@@ -5,4 +5,9 @@ use Src\Models\Question;
 interface QuestionRepositoryInterface {
   public function getActiveByDifficulty(int $categoryId, int $difficulty): ?Question;
   public function find(int $id): ?Question;
+  public function update(int $id, string $statement, bool $isVerified): bool;
+  public function create(array $data): int;
+  public function saveOptions(int $questionId, array $options): void;
+  public function saveExplanation(int $questionId, string $text, ?string $sourceRef = null): void;
+  public function getPdo(): ?\PDO;
 }

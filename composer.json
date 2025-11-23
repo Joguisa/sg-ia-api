@@ -4,7 +4,10 @@
     "license": "proprietary",
     "type": "project",
     "require": {
-      "php": ">=8.1"
+        "php": ">=8.1",
+        "guzzlehttp/guzzle": "^7.10",
+        "paragonie/certainty": "^3.0",
+        "vlucas/phpdotenv": "^5.6"
     },
     "autoload": {
       "psr-4": {
@@ -30,4 +33,3 @@
     "minimum-stability": "dev",
     "prefer-stable": true
 }
-  

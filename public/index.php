@@ -9,8 +9,9 @@ use Src\Middleware\CorsMiddleware;
 use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository};
 use Src\Repositories\Interfaces\{PlayerRepositoryInterface,QuestionRepositoryInterface,SessionRepositoryInterface,AnswerRepositoryInterface};
 
-use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController};
+use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController};
 use Src\Services\{GameService,AIEngine};
+use Src\Services\AI\GeminiAIService;
 
 require_once __DIR__ . '/../vendor/autoload.php';
 header('Content-Type: application/json; charset=utf-8');
@@ -29,12 +30,19 @@ $sessionsRepo  = new SessionRepository($conn);
 $answersRepo   = new AnswerRepository($conn);
 $ai            = new AIEngine();
 
-$gameService = new GameService($sessionsRepo,$questionsRepo,$answersRepo,$playersRepo,$ai);
+// Inicializar servicio Gemini si la API key está configurada
+$generativeAi = null;
+if (!empty($config['gemini']['api_key'] ?? null)) {
+  $generativeAi = new GeminiAIService($config['gemini']['api_key']);
+}
+
+$gameService = new GameService($sessionsRepo,$questionsRepo,$answersRepo,$playersRepo,$ai,$generativeAi);
 
 $playerCtrl = new PlayerController($playersRepo);
 $gameCtrl   = new GameController($gameService);
 $questionCtrl = new QuestionController($questionsRepo);
 $statsCtrl  = new StatisticsController($conn);
+$adminCtrl  = new AdminController($questionsRepo);
 
 // Router
 $router = new Router();
@@ -58,6 +66,10 @@ $router->add('GET','/questions/{id}', fn($p)=> $questionCtrl->find($p));
 
 // Stats
 $router->add('GET','/stats/session/{id}', fn($p)=> $statsCtrl->session($p));
+
+// Admin
+$router->add('PUT','/admin/questions/{id}', fn($p)=> $adminCtrl->updateQuestion($p));
+$router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $adminCtrl->verifyQuestion($p));
 
 // Dispatch
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
