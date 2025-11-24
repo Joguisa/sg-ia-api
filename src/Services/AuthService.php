@@ -10,7 +10,7 @@ final class AuthService {
   private string $jwtSecret;
   private int $tokenExpiry;
 
-  public function __construct(PDO $pdo, string $jwtSecret = null, int $tokenExpirySeconds = 86400) {
+  public function __construct(PDO $pdo, ?string $jwtSecret = null, int $tokenExpirySeconds = 86400) {
     $this->pdo = $pdo;
     $this->jwtSecret = $jwtSecret ?? getenv('JWT_SECRET') ?? 'your-super-secret-key-change-in-production';
     $this->tokenExpiry = $tokenExpirySeconds;
