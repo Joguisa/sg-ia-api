@@ -71,7 +71,7 @@ final class GameService {
    * @param int $difficulty Nivel de dificultad
    * @return array|null Datos de la pregunta generada o null si falla
    */
-  private function generateAndSaveQuestion(int $categoryId, int $difficulty): ?array {
+  public function generateAndSaveQuestion(int $categoryId, int $difficulty): ?array {
     try {
       // Obtener nombre de la categoría (asumiendo que existe, si no lanzará excepción)
       $categoryName = $this->getCategoryName($categoryId);

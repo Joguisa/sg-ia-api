@@ -1,8 +1,11 @@
 <?php
+declare(strict_types=1);
+
 namespace Src\Services\AI;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
+use Src\Repositories\Interfaces\SystemPromptRepositoryInterface;
 use Src\Services\SSL\CertificateManager;
 use Throwable;
 
@@ -11,7 +14,10 @@ final class GeminiAIService implements GenerativeAIInterface {
   private string $apiKey;
   private string $apiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-  public function __construct(string $apiKey) {
+  public function __construct(
+    string $apiKey,
+    private ?SystemPromptRepositoryInterface $prompts = null
+  ) {
     $this->apiKey = $apiKey;
     $this->client = $this->createHttpClient();
   }
@@ -44,6 +50,7 @@ final class GeminiAIService implements GenerativeAIInterface {
    */
   public function generateQuestion(string $topic, int $difficulty): array {
     $prompt = $this->buildSystemPrompt($topic, $difficulty);
+    $temperature = $this->getTemperature();
 
     try {
       $response = $this->client->post($this->apiEndpoint, [
@@ -57,7 +64,7 @@ final class GeminiAIService implements GenerativeAIInterface {
             ]
           ],
           'generationConfig' => [
-            'temperature' => 0.7,
+            'temperature' => $temperature,
             'topK' => 40,
             'topP' => 0.95,
             'maxOutputTokens' => 2048
@@ -138,6 +145,7 @@ Estructura: { 'isCorrect': bool, 'explanation': string (máx 200 caracteres) }";
 
   /**
    * Construye el prompt del sistema para generación de preguntas
+   * Obtiene la template de BD y reemplaza placeholders
    *
    * @param string $topic Tema médico
    * @param int $difficulty Nivel (1-5)
@@ -153,9 +161,60 @@ Estructura: { 'isCorrect': bool, 'explanation': string (máx 200 caracteres) }";
       default => 'intermedio'
     };
 
-    return <<<EOT
+    $templatePrompt = $this->getPromptTemplate();
+
+    return str_replace(
+      ['{topic}', '{difficulty}', '{difficulty_desc}'],
+      [$topic, (string)$difficulty, $difficultyDesc],
+      $templatePrompt
+    );
+  }
+
+  /**
+   * Obtiene el template de prompt de la BD, con fallback a valor por defecto
+   *
+   * @return string Template del prompt
+   */
+  private function getPromptTemplate(): string {
+    if (!$this->prompts) {
+      return $this->getDefaultPromptTemplate();
+    }
+
+    $prompt = $this->prompts->getActive();
+    if (!$prompt) {
+      return $this->getDefaultPromptTemplate();
+    }
+
+    return $prompt->promptText;
+  }
+
+  /**
+   * Obtiene la temperatura de configuración, con fallback a 0.7
+   *
+   * @return float Temperatura para llamada a API
+   */
+  private function getTemperature(): float {
+    if (!$this->prompts) {
+      return 0.7;
+    }
+
+    $prompt = $this->prompts->getActive();
+    if (!$prompt) {
+      return 0.7;
+    }
+
+    return $prompt->temperature;
+  }
+
+  /**
+   * Template por defecto (fallback si BD no disponible)
+   *
+   * @return string Template del prompt
+   */
+  private function getDefaultPromptTemplate(): string {
+    return <<<'EOT'
 Eres un experto oncólogo y educador sanitario especializado en Cáncer de Colon.
-Genera EXACTAMENTE 1 pregunta de opción múltiple sobre '$topic' para nivel de dificultad $difficulty ($difficultyDesc).
+Genera EXACTAMENTE 1 pregunta de opción múltiple sobre {topic} para nivel de dificultad {difficulty} ({difficulty_desc}).
 
 Contexto educativo: Alfabetización sobre Cáncer de Colon en Ecuador
 Estándares: Basado en Guías MSP Ecuador y OMS

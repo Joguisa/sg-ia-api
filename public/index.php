@@ -7,8 +7,8 @@ use Src\Utils\Response;
 use Src\Middleware\CorsMiddleware;
 use Src\Middleware\AuthMiddleware;
 
-use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository};
-use Src\Repositories\Interfaces\{PlayerRepositoryInterface,QuestionRepositoryInterface,SessionRepositoryInterface,AnswerRepositoryInterface};
+use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository};
+use Src\Repositories\Interfaces\{PlayerRepositoryInterface,QuestionRepositoryInterface,SessionRepositoryInterface,AnswerRepositoryInterface,SystemPromptRepositoryInterface};
 
 use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController};
 use Src\Services\{GameService,AIEngine,AuthService};
@@ -29,12 +29,13 @@ $playersRepo   = new PlayerRepository($conn);
 $questionsRepo = new QuestionRepository($conn);
 $sessionsRepo  = new SessionRepository($conn);
 $answersRepo   = new AnswerRepository($conn);
+$promptsRepo   = new SystemPromptRepository($conn);
 $ai            = new AIEngine();
 
 // Inicializar servicio Gemini si la API key está configurada
 $generativeAi = null;
 if (!empty($config['gemini']['api_key'] ?? null)) {
-  $generativeAi = new GeminiAIService($config['gemini']['api_key']);
+  $generativeAi = new GeminiAIService($config['gemini']['api_key'], $promptsRepo);
 }
 
 $gameService = new GameService($sessionsRepo,$questionsRepo,$answersRepo,$playersRepo,$ai,$generativeAi);
@@ -43,7 +44,7 @@ $playerCtrl = new PlayerController($playersRepo);
 $gameCtrl   = new GameController($gameService);
 $questionCtrl = new QuestionController($questionsRepo);
 $statsCtrl  = new StatisticsController($conn);
-$adminCtrl  = new AdminController($questionsRepo);
+$adminCtrl  = new AdminController($questionsRepo, $promptsRepo, $gameService);
 $authService = new AuthService($conn->pdo());
 $authCtrl   = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authService);
@@ -75,8 +76,20 @@ $router->add('GET','/questions/{id}', fn($p)=> $questionCtrl->find($p));
 $router->add('GET','/stats/session/{id}', fn($p)=> $statsCtrl->session($p));
 
 // Admin (Protected)
+// Question Management
 $router->add('PUT','/admin/questions/{id}', fn($p)=> $adminCtrl->updateQuestion($p), fn()=> $authMiddleware->validate());
 $router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $adminCtrl->verifyQuestion($p), fn()=> $authMiddleware->validate());
+
+// Prompt Configuration
+$router->add('GET','/admin/config/prompt', fn()=> $adminCtrl->getPromptConfig(), fn()=> $authMiddleware->validate());
+$router->add('PUT','/admin/config/prompt', fn()=> $adminCtrl->updatePromptConfig(), fn()=> $authMiddleware->validate());
+
+// Category Management
+$router->add('POST','/admin/categories', fn()=> $adminCtrl->createCategory(), fn()=> $authMiddleware->validate());
+$router->add('DELETE','/admin/categories/{id}', fn($p)=> $adminCtrl->deleteCategory($p), fn()=> $authMiddleware->validate());
+
+// Batch Generation
+$router->add('POST','/admin/generate-batch', fn()=> $adminCtrl->generateBatch(), fn()=> $authMiddleware->validate());
 
 // Dispatch
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
