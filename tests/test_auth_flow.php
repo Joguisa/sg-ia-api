@@ -1,137 +1,78 @@
 <?php
+/**
+ * Test Auth Flow
+ * Valida: Login, Token JWT y Protección de Rutas Admin
+ */
 declare(strict_types=1);
 
-require_once __DIR__ . '/../vendor/autoload.php';
+// Configuración
+$baseUrl = 'http://localhost:8000';
+$adminEmail = 'admin@sg-ia.com';
+$adminPassword = 'admin123';
 
-use Src\Database\Connection;
-use Src\Services\GameService;
-use Src\Services\AIEngine;
-use Src\Services\AI\GeminiAIService;
-use Src\Repositories\Implementations\{
-    PlayerRepository,
-    QuestionRepository,
-    SessionRepository,
-    AnswerRepository,
-    SystemPromptRepository 
-};
-use Dotenv\Dotenv;
+// Colores para consola
+$red = "\033[31m";
+$green = "\033[32m";
+$reset = "\033[0m";
 
 echo "═══════════════════════════════════════════════════════════\n";
-echo "API INTEGRATION TEST SUITE (CON IA)\n";
+echo " PRUEBA DE SEGURIDAD (JWT & RUTAS)\n";
 echo "═══════════════════════════════════════════════════════════\n\n";
 
-// 1. Cargar Entorno (Para la API Key)
-$envPath = __DIR__ . '/../';
-if (file_exists($envPath . '.env')) {
-    $dotenv = Dotenv::createImmutable($envPath);
-    $dotenv->load();
+// Función helper para peticiones
+function makeRequest($method, $url, $data = null, $token = null) {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+    
+    $headers = ['Content-Type: application/json'];
+    if ($token) {
+        $headers[] = "Authorization: Bearer $token";
+    }
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+    if ($data) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    }
+
+    $response = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    return ['code' => $code, 'body' => json_decode($response, true)];
 }
 
-$config = require __DIR__ . '/../config/database.php';
-$conn = new Connection($config);
-$pdo = $conn->pdo();
-
-// 2. Repositorios
-$playersRepo = new PlayerRepository($conn);
-$questionsRepo = new QuestionRepository($conn);
-$sessionsRepo = new SessionRepository($conn);
-$answersRepo = new AnswerRepository($conn);
-$promptRepo = new SystemPromptRepository($conn); // Nuevo repo para IA
-$aiEngine = new AIEngine();
-
-// 3. Inicializar IA (Si hay API Key)
-$apiKey = $_ENV['GEMINI_API_KEY'] ?? getenv('GEMINI_API_KEY');
-$generativeAi = null;
-if ($apiKey) {
-    echo "IA Activada para el test\n";
-    $generativeAi = new GeminiAIService($apiKey, $promptRepo);
+// 1. Intento de acceso SIN token (Debe fallar)
+echo "1. Probando acceso protegido SIN token...\n";
+$res = makeRequest('PUT', "$baseUrl/admin/questions/1", ['statement' => 'hack']);
+if ($res['code'] === 401) {
+    echo "{$green} Bloqueado correctamente (401){$reset}\n";
 } else {
-    echo "Advertencia: Sin API Key, el test fallará si la BD está vacía.\n";
+    echo "{$red} FALLO: Código {$res['code']} inesperado{$reset}\n";
 }
 
-// 4. Inyectar todo en GameService
-$gameService = new GameService(
-    $sessionsRepo, 
-    $questionsRepo, 
-    $answersRepo, 
-    $playersRepo, 
-    $aiEngine, 
-    $generativeAi // <--- ¡ESTO FALTABA!
-);
+// 2. Login (Obtener Token)
+echo "\n2. Iniciando sesión como Admin...\n";
+$login = makeRequest('POST', "$baseUrl/auth/login", ['email' => $adminEmail, 'password' => $adminPassword]);
 
-// ============================================================
-// TEST 1: Verify Player Exists
-// ============================================================
-echo "\n[TEST 1] Verify Player Exists\n";
-echo "─────────────────────────────────────────────────────────\n";
-
-$player = $playersRepo->find(1);
-if (!$player) {
-    // Crear con edad (fix anterior)
-    $testPlayer = $playersRepo->create('Integration Test Player', 25);
-    $player = $testPlayer;
-}
-echo "Player: {$player->name} (Age: {$player->age})\n";
-
-// ============================================================
-// TEST 2: POST /games/start
-// ============================================================
-echo "\n[TEST 2] Start Session\n";
-echo "─────────────────────────────────────────────────────────\n";
-$sessionResult = $gameService->startSession($player->id, 1.0);
-$sessionId = $sessionResult['session_id'];
-echo "Session ID: {$sessionId}\n";
-
-// ============================================================
-// TEST 3: GET /games/next (Trigger IA)
-// ============================================================
-echo "\n[TEST 3] Get Next Question (Triggering Gemini...)\n";
-echo "─────────────────────────────────────────────────────────\n";
-
-// Buscar una categoría válida (cualquiera)
-$catStmt = $pdo->query("SELECT id FROM question_categories LIMIT 1");
-$catId = $catStmt->fetchColumn();
-
-if (!$catId) die("Error: No hay categorías en la BD. Ejecuta db/init.sql");
-
-echo "Solicitando pregunta para Categoría ID: {$catId}...\n";
-
-// Esto llamará a la IA porque la tabla questions está vacía
-$questionResult = $gameService->nextQuestion((int)$catId, 1);
-
-if (!$questionResult) {
-    die("Error: No se generó pregunta. Verifica API Key o conexión.\n");
-}
-
-$questionId = $questionResult['id'];
-echo "Pregunta Generada: {$questionResult['statement']}\n";
-echo "   ID: {$questionId} | Dificultad: {$questionResult['difficulty']}\n";
-echo "   (Guardada en BD con is_ai_generated = 1)\n";
-
-// ============================================================
-// TEST 4: Submit Answer
-// ============================================================
-echo "\n[TEST 4] Submit Answer & Feedback\n";
-echo "─────────────────────────────────────────────────────────\n";
-
-// Responder correctamente (simulado)
-$answerResult = $gameService->submitAnswer(
-    $sessionId,
-    $questionId,
-    null,
-    true, // isCorrect
-    2.0   // timeTaken
-);
-
-echo "Score: {$answerResult['score']}\n";
-echo "Feedback: {$answerResult['explanation']}\n";
-
-if (!empty($answerResult['explanation'])) {
-    echo "Feedback educativo recibido correctamente.\n";
+$token = null;
+if ($login['code'] === 200 && isset($login['body']['token'])) {
+    $token = $login['body']['token'];
+    echo "{$green} Login exitoso. Token recibido.{$reset}\n";
+    echo "   Token: " . substr($token, 0, 15) . "...\n";
 } else {
-    echo "Falta feedback educativo.\n";
+    die("{$red} FALLO: No se pudo iniciar sesión.{$reset}\n");
+}
+
+// 3. Acceso CON token (Debe funcionar)
+echo "\n3. Probando acceso protegido CON token...\n";
+// Intentamos verificar la pregunta 1 (existente en seed)
+$verify = makeRequest('PATCH', "$baseUrl/admin/questions/1/verify", ['verified' => true], $token);
+
+if ($verify['code'] === 200) {
+    echo "{$green} Acceso autorizado correctamente (200){$reset}\n";
+} else {
+    echo "{$red} FALLO: Código {$verify['code']} - " . json_encode($verify['body']) . "{$reset}\n";
 }
 
 echo "\n═══════════════════════════════════════════════════════════\n";
-echo "TEST DE FLUJO COMPLETADO\n";
-echo "═══════════════════════════════════════════════════════════\n";

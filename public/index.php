@@ -6,16 +6,21 @@ use Src\Utils\Router;
 use Src\Utils\Response;
 use Src\Middleware\CorsMiddleware;
 use Src\Middleware\AuthMiddleware;
+use Dotenv\Dotenv;
 
 use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository};
-use Src\Repositories\Interfaces\{PlayerRepositoryInterface,QuestionRepositoryInterface,SessionRepositoryInterface,AnswerRepositoryInterface,SystemPromptRepositoryInterface};
-
 use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController};
 use Src\Services\{GameService,AIEngine,AuthService};
 use Src\Services\AI\GeminiAIService;
 
 require_once __DIR__ . '/../vendor/autoload.php';
 header('Content-Type: application/json; charset=utf-8');
+
+$envPath = __DIR__ . '/../';
+if (file_exists($envPath . '.env')) {
+    $dotenv = Dotenv::createImmutable($envPath);
+    $dotenv->load();
+}
 
 $config = require __DIR__ . '/../config/config.php';
 $dbCfg = require __DIR__ . '/../config/database.php';
@@ -24,7 +29,7 @@ $dbCfg = require __DIR__ . '/../config/database.php';
 CorsMiddleware::handle($config['cors']);
 
 // DI básico
-$conn  = new Connection($dbCfg);
+$conn          = new Connection($dbCfg);
 $playersRepo   = new PlayerRepository($conn);
 $questionsRepo = new QuestionRepository($conn);
 $sessionsRepo  = new SessionRepository($conn);
@@ -32,21 +37,20 @@ $answersRepo   = new AnswerRepository($conn);
 $promptsRepo   = new SystemPromptRepository($conn);
 $ai            = new AIEngine();
 
-// Inicializar servicio Gemini si la API key está configurada
 $generativeAi = null;
 if (!empty($config['gemini']['api_key'] ?? null)) {
   $generativeAi = new GeminiAIService($config['gemini']['api_key'], $promptsRepo);
 }
 
-$gameService = new GameService($sessionsRepo,$questionsRepo,$answersRepo,$playersRepo,$ai,$generativeAi);
+$gameService = new GameService($sessionsRepo, $questionsRepo, $answersRepo, $playersRepo, $ai, $generativeAi);
 
-$playerCtrl = new PlayerController($playersRepo);
-$gameCtrl   = new GameController($gameService);
+$playerCtrl   = new PlayerController($playersRepo);
+$gameCtrl     = new GameController($gameService);
 $questionCtrl = new QuestionController($questionsRepo);
-$statsCtrl  = new StatisticsController($conn);
-$adminCtrl  = new AdminController($questionsRepo, $promptsRepo, $gameService);
-$authService = new AuthService($conn->pdo());
-$authCtrl   = new AuthController($authService);
+$statsCtrl    = new StatisticsController($conn);
+$adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService);
+$authService  = new AuthService($conn->pdo());
+$authCtrl     = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authService);
 
 // Router
@@ -74,10 +78,10 @@ $router->add('GET','/questions/{id}', fn($p)=> $questionCtrl->find($p));
 
 // Stats (Public)
 $router->add('GET','/stats/session/{id}', fn($p)=> $statsCtrl->session($p));
-$router->add('GET','/stats/player/{id}', fn($p)=> $statsCtrl->playerStats($p));
+
+$router->add('GET','/stats/player/{id}', fn($p)=> $statsCtrl->playerStats($p)); 
 $router->add('GET','/stats/leaderboard', fn()=> $statsCtrl->leaderboard());
 
-// Admin (Protected)
 // Question Management
 $router->add('PUT','/admin/questions/{id}', fn($p)=> $adminCtrl->updateQuestion($p), fn()=> $authMiddleware->validate());
 $router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $adminCtrl->verifyQuestion($p), fn()=> $authMiddleware->validate());

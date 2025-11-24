@@ -12,7 +12,14 @@ final class AuthService {
 
   public function __construct(PDO $pdo, ?string $jwtSecret = null, int $tokenExpirySeconds = 86400) {
     $this->pdo = $pdo;
-    $this->jwtSecret = $jwtSecret ?? getenv('JWT_SECRET') ?? 'your-super-secret-key-change-in-production';
+    
+    $secret = $jwtSecret ?? $_ENV['JWT_SECRET'] ?? getenv('JWT_SECRET');
+
+    if (!$secret) {
+        throw new \RuntimeException('CRÍTICO: JWT_SECRET no está definido en el entorno (.env).');
+    }
+
+    $this->jwtSecret = $secret;
     $this->tokenExpiry = $tokenExpirySeconds;
   }
 
@@ -24,12 +31,10 @@ final class AuthService {
    * @return array{ok: bool, token?: string, error?: string}
    */
   public function login(string $email, string $password): array {
-    // Validaciones básicas
     if (empty($email) || empty($password)) {
       return ['ok' => false, 'error' => 'Email and password are required'];
     }
 
-    // Buscar admin en la BD
     try {
       $stmt = $this->pdo->prepare('SELECT id, email, password_hash FROM admins WHERE email = ?');
       $stmt->execute([$email]);
@@ -39,12 +44,10 @@ final class AuthService {
         return ['ok' => false, 'error' => 'Invalid credentials'];
       }
 
-      // Verificar password
       if (!password_verify($password, $admin['password_hash'])) {
         return ['ok' => false, 'error' => 'Invalid credentials'];
       }
 
-      // Generar JWT
       $now = time();
       $payload = [
         'sub' => $admin['id'],

@@ -209,7 +209,7 @@ INSERT INTO content_sources (citation, url) VALUES
 
 -- Admin: admin@sg-ia.com / admin123
 INSERT INTO admins (email, password_hash) 
-VALUES ('admin@sg-ia.com', '$2y$10$7n3Lj5mK9xK8pQrLxZvN3O8qQ9r8sK7jL4mN6oP7qR8sT9uV0wX1y');
+VALUES ('admin@sg-ia.com', '$2y$12$te4rWeMY9jRnwrqK2wvqd.ZepWvkXunhOLQu5gRA5tfG/R4Ck3Weq');
 
 -- Prompt por defecto para Gemini
 INSERT INTO system_prompts (prompt_text, temperature, is_active)
