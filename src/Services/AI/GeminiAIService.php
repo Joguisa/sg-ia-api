@@ -4,6 +4,7 @@ namespace Src\Services\AI;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Src\Services\SSL\CertificateManager;
+use Throwable;
 
 final class GeminiAIService implements GenerativeAIInterface {
   private Client $client;

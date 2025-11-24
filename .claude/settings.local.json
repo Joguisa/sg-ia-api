@@ -4,7 +4,11 @@
       "Bash(php:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(dir:*)",
+      "Bash(composer show:*)",
+      "Bash(findstr:*)",
+      "Bash(composer require:*)"
     ],
     "deny": [],
     "ask": []

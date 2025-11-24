@@ -9,5 +9,6 @@ interface QuestionRepositoryInterface {
   public function create(array $data): int;
   public function saveOptions(int $questionId, array $options): void;
   public function saveExplanation(int $questionId, string $text, ?string $sourceRef = null): void;
+  public function getExplanation(int $questionId): ?string;
   public function getPdo(): ?\PDO;
 }

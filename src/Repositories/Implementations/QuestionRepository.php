@@ -188,6 +188,20 @@ final class QuestionRepository implements QuestionRepositoryInterface {
   }
 
   /**
+   * Obtiene la explicación de una pregunta
+   *
+   * @param int $questionId ID de la pregunta
+   * @return string|null Texto de la explicación o null si no existe
+   */
+  public function getExplanation(int $questionId): ?string {
+    $sql = "SELECT text FROM question_explanations WHERE question_id = :question_id LIMIT 1";
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute([':question_id' => $questionId]);
+    $result = $st->fetch();
+    return $result ? $result['text'] : null;
+  }
+
+  /**
    * Retorna la instancia de PDO para operaciones directas
    *
    * @return \PDO

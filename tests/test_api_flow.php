@@ -46,7 +46,7 @@ echo "────────────────────────�
 
 $player = $playersRepo->find(1);
 if (!$player) {
-    $testPlayer = $playersRepo->create('Integration Test Player');
+    $testPlayer = $playersRepo->create('Integration Test Player', 25);
     $player = $testPlayer;
 }
 
