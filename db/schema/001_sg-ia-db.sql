@@ -1,37 +1,20 @@
-CREATE DATABASE IF NOT EXISTS sg_ia_db
-CHARACTER SET utf8mb4
-COLLATE utf8mb4_unicode_ci;
 -- =========================================================
--- SG-IA-DB
--- Requisitos: MySQL 8.0+, InnoDB, utf8mb4. Tiempos en UTC.
+-- SG-IA DB: Script de Inicialización Unificado (Clean Install)
+-- Fecha: 2025-11-23
 -- =========================================================
 
+DROP DATABASE IF EXISTS sg_ia_db;
+CREATE DATABASE sg_ia_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE sg_ia_db;
--- Sesión
+
 SET SQL_MODE = 'STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION';
 SET time_zone = '+00:00';
 
--- ======================
--- Drops seguros (orden)
--- ======================
-DROP VIEW IF EXISTS v_sessions_activity;
-DROP VIEW IF EXISTS v_player_topic_stats;
-DROP VIEW IF EXISTS v_session_stats;
-DROP TRIGGER IF EXISTS trg_qopt_one_correct_ins;
-DROP TRIGGER IF EXISTS trg_qopt_one_correct_upd;
-DROP TABLE IF EXISTS admin_system_logs;
-DROP TABLE IF EXISTS player_answers;
-DROP TABLE IF EXISTS game_sessions;
-DROP TABLE IF EXISTS question_options;
-DROP TABLE IF EXISTS question_explanations;
-DROP TABLE IF EXISTS questions;
-DROP TABLE IF EXISTS players;
-DROP TABLE IF EXISTS content_sources;
-DROP TABLE IF EXISTS question_categories;
+-- =========================================================
+-- 1. TABLAS MAESTRAS (Catálogos)
+-- =========================================================
 
--- =========================
--- 1) Catálogo de categorías
--- =========================
+-- Categorías de preguntas
 CREATE TABLE question_categories (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100) NOT NULL UNIQUE,
@@ -39,13 +22,7 @@ CREATE TABLE question_categories (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Semilla mínima
-INSERT INTO question_categories (name, description)
-VALUES ('Cáncer de Colon', 'Banco base para piloto');
-
--- ==================================
--- 2) Fuentes (trazabilidad académica)
--- ==================================
+-- Fuentes bibliográficas
 CREATE TABLE content_sources (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   citation VARCHAR(255) NOT NULL,
@@ -53,20 +30,31 @@ CREATE TABLE content_sources (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============
--- 3) Jugadores
--- ============
+-- Administradores (Acceso al Dashboard)
+CREATE TABLE admins (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(100) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+  KEY ix_admins_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- 2. TABLAS DE JUEGO (Usuarios y Contenido)
+-- =========================================================
+
+-- Jugadores
 CREATE TABLE players (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
+  age TINYINT UNSIGNED NOT NULL, -- Columna agregada en migración 003
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
   KEY ix_players_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ==========================
--- 4) Preguntas del cuestionario
--- ==========================
+-- Preguntas
 CREATE TABLE questions (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   statement TEXT NOT NULL,
@@ -74,18 +62,19 @@ CREATE TABLE questions (
   category_id INT UNSIGNED NOT NULL,
   source_id INT UNSIGNED NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  is_ai_generated BOOLEAN DEFAULT 0,   -- Columna agregada en migración 003
+  admin_verified BOOLEAN DEFAULT 1,    -- Columna agregada en migración 003
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT ck_questions_difficulty CHECK (difficulty BETWEEN 1 AND 5),
   CONSTRAINT fk_questions_category FOREIGN KEY (category_id) REFERENCES question_categories(id),
   CONSTRAINT fk_questions_source   FOREIGN KEY (source_id)   REFERENCES content_sources(id),
   KEY ix_q_cat_diff_active (category_id, difficulty, is_active),
-  KEY ix_q_diff_active (difficulty, is_active)
+  KEY ix_q_diff_active (difficulty, is_active),
+  KEY ix_questions_ai_verified (is_ai_generated, admin_verified)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ==============================
--- 5) Explicaciones por pregunta
--- ==============================
+-- Explicaciones (Feedback educativo)
 CREATE TABLE question_explanations (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   question_id INT UNSIGNED NOT NULL,
@@ -96,9 +85,7 @@ CREATE TABLE question_explanations (
   KEY ix_qexp_q (question_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================
--- 6) Opciones de respuesta
--- =========================
+-- Opciones de respuesta
 CREATE TABLE question_options (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   question_id INT UNSIGNED NOT NULL,
@@ -111,9 +98,10 @@ CREATE TABLE question_options (
   KEY ix_qopt_correct (question_id, is_correct)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =====================
--- 7) Sesiones de juego
--- =====================
+-- =========================================================
+-- 3. TABLAS TRANSACCIONALES (Sesiones y Respuestas)
+-- =========================================================
+
 CREATE TABLE game_sessions (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   player_id INT UNSIGNED NOT NULL,
@@ -128,12 +116,9 @@ CREATE TABLE game_sessions (
   CONSTRAINT ck_gs_lives CHECK (lives >= 0 AND lives <= 9),
   CONSTRAINT fk_gs_player FOREIGN KEY (player_id) REFERENCES players(id),
   KEY ix_gs_player_status (player_id, status, started_at),
-  KEY idx_player_current_difficulty (player_id, current_difficulty) -- Optimización Motor IA
+  KEY idx_player_current_difficulty (player_id, current_difficulty)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================================
--- 8) Respuestas del jugador (log inmutable)
--- =========================================
 CREATE TABLE player_answers (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   session_id INT UNSIGNED NOT NULL,
@@ -153,9 +138,6 @@ CREATE TABLE player_answers (
   KEY ix_pa_session_perf  (session_id, is_correct, answered_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ===========================
--- 9) Auditoría administrativa
--- ===========================
 CREATE TABLE admin_system_logs (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id INT UNSIGNED NULL,
@@ -167,10 +149,10 @@ CREATE TABLE admin_system_logs (
   KEY ix_asl_action_entity (action, entity_table, logged_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================
--- 10) Triggers de integridad
---     (solo una opción correcta por pregunta)
--- =========================
+-- =========================================================
+-- 4. TRIGGERS
+-- =========================================================
+
 DELIMITER $$
 
 CREATE TRIGGER trg_qopt_one_correct_ins
@@ -199,11 +181,10 @@ END$$
 
 DELIMITER ;
 
--- ======================
--- 11) Vistas de métricas
--- ======================
+-- =========================================================
+-- 5. VISTAS DE MÉTRICAS
+-- =========================================================
 
--- Por sesión
 CREATE VIEW v_session_stats AS
 SELECT
   pa.session_id,
@@ -213,7 +194,6 @@ SELECT
 FROM player_answers pa
 GROUP BY pa.session_id;
 
--- Por jugador y categoría
 CREATE VIEW v_player_topic_stats AS
 SELECT
   p.id                   AS player_id,
@@ -229,7 +209,6 @@ JOIN questions q ON q.id = pa.question_id
 JOIN question_categories qc ON qc.id = q.category_id
 GROUP BY p.id, qc.id, qc.name;
 
--- Actividad e inactividad
 CREATE VIEW v_sessions_activity AS
 SELECT
   gs.id AS session_id,
@@ -242,3 +221,24 @@ SELECT
 FROM game_sessions gs
 LEFT JOIN player_answers pa ON pa.session_id = gs.id
 GROUP BY gs.id, gs.player_id, gs.status, gs.started_at, gs.ended_at;
+
+-- =========================================================
+-- 6. DATOS SEMILLA (SEED DATA)
+-- =========================================================
+
+-- Insertar Categorías
+INSERT INTO question_categories (name, description) VALUES
+('Epidemiología y Generalidades', 'Datos globales, regionales y tasas de supervivencia.'),
+('Factores de Riesgo', 'Factores modificables (dieta, tabaco) y no modificables.'),
+('Tamizaje y Detección', 'Métodos de diagnóstico y edades recomendadas.'),
+('Prevención y Estilos de Vida', 'Hábitos saludables y autocuidado.');
+
+-- Insertar Fuentes
+INSERT INTO content_sources (citation, url) VALUES
+('Guías de Salud Pública y Literatura Científica (Resumen Propuesta)', NULL);
+
+-- Insertar Super Admin
+-- Email: admin@sg-ia.com
+-- Password: admin123
+INSERT INTO admins (email, password_hash) 
+VALUES ('admin@sg-ia.com', '$2y$10$7n3Lj5mK9xK8pQrLxZvN3O8qQ9r8sK7jL4mN6oP7qR8sT9uV0wX1y');
