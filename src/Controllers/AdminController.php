@@ -347,4 +347,100 @@ final class AdminController {
       Response::json(['ok'=>false,'error'=>'Batch generation failed: ' . $e->getMessage()], 500);
     }
   }
+
+  /**
+   * Obtener estadísticas del dashboard administrativo
+   *
+   * Endpoint: GET /admin/dashboard
+   *
+   * @return void
+   */
+  public function dashboardStats(): void {
+    try {
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        return;
+      }
+
+      // Resumen: conteos totales
+      $summaryStmt = $pdo->prepare("
+        SELECT
+          (SELECT COUNT(id) FROM players) AS total_players,
+          (SELECT COUNT(id) FROM game_sessions) AS total_sessions,
+          (SELECT COUNT(id) FROM questions) AS total_questions,
+          (SELECT COUNT(id) FROM questions WHERE admin_verified = 0) AS pending_verification
+      ");
+      $summaryStmt->execute();
+      $summary = $summaryStmt->fetch(\PDO::FETCH_ASSOC);
+
+      // Top 5 preguntas más difíciles (menor porcentaje de acierto)
+      $hardestStmt = $pdo->prepare("
+        SELECT
+          q.id,
+          q.statement,
+          q.difficulty,
+          qc.name AS category_name,
+          COUNT(pa.id) AS times_answered,
+          ROUND((SUM(CASE WHEN pa.is_correct = 1 THEN 1 ELSE 0 END) / COUNT(pa.id)) * 100, 2) AS success_rate
+        FROM questions q
+        LEFT JOIN question_categories qc ON qc.id = q.category_id
+        LEFT JOIN player_answers pa ON pa.question_id = q.id
+        WHERE pa.id IS NOT NULL
+        GROUP BY q.id, q.statement, q.difficulty, qc.name
+        ORDER BY success_rate ASC
+        LIMIT 5
+      ");
+      $hardestStmt->execute();
+      $hardestQuestions = $hardestStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+      // Top 5 preguntas más fáciles (mayor porcentaje de acierto)
+      $easiestStmt = $pdo->prepare("
+        SELECT
+          q.id,
+          q.statement,
+          q.difficulty,
+          qc.name AS category_name,
+          COUNT(pa.id) AS times_answered,
+          ROUND((SUM(CASE WHEN pa.is_correct = 1 THEN 1 ELSE 0 END) / COUNT(pa.id)) * 100, 2) AS success_rate
+        FROM questions q
+        LEFT JOIN question_categories qc ON qc.id = q.category_id
+        LEFT JOIN player_answers pa ON pa.question_id = q.id
+        WHERE pa.id IS NOT NULL
+        GROUP BY q.id, q.statement, q.difficulty, qc.name
+        ORDER BY success_rate DESC
+        LIMIT 5
+      ");
+      $easiestStmt->execute();
+      $easiestQuestions = $easiestStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+      Response::json([
+        'ok' => true,
+        'summary' => [
+          'total_players' => (int)($summary['total_players'] ?? 0),
+          'total_sessions' => (int)($summary['total_sessions'] ?? 0),
+          'total_questions' => (int)($summary['total_questions'] ?? 0),
+          'pending_verification' => (int)($summary['pending_verification'] ?? 0)
+        ],
+        'hardest_questions' => array_map(fn($q) => [
+          'id' => (int)$q['id'],
+          'statement' => $q['statement'],
+          'difficulty' => (int)$q['difficulty'],
+          'category_name' => $q['category_name'],
+          'times_answered' => (int)($q['times_answered'] ?? 0),
+          'success_rate' => (float)($q['success_rate'] ?? 0)
+        ], $hardestQuestions),
+        'easiest_questions' => array_map(fn($q) => [
+          'id' => (int)$q['id'],
+          'statement' => $q['statement'],
+          'difficulty' => (int)$q['difficulty'],
+          'category_name' => $q['category_name'],
+          'times_answered' => (int)($q['times_answered'] ?? 0),
+          'success_rate' => (float)($q['success_rate'] ?? 0)
+        ], $easiestQuestions)
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok'=>false,'error'=>'Failed to fetch dashboard stats: ' . $e->getMessage()], 500);
+    }
+  }
 }

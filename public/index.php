@@ -74,6 +74,8 @@ $router->add('GET','/questions/{id}', fn($p)=> $questionCtrl->find($p));
 
 // Stats (Public)
 $router->add('GET','/stats/session/{id}', fn($p)=> $statsCtrl->session($p));
+$router->add('GET','/stats/player/{id}', fn($p)=> $statsCtrl->playerStats($p));
+$router->add('GET','/stats/leaderboard', fn()=> $statsCtrl->leaderboard());
 
 // Admin (Protected)
 // Question Management
@@ -90,6 +92,9 @@ $router->add('DELETE','/admin/categories/{id}', fn($p)=> $adminCtrl->deleteCateg
 
 // Batch Generation
 $router->add('POST','/admin/generate-batch', fn()=> $adminCtrl->generateBatch(), fn()=> $authMiddleware->validate());
+
+// Dashboard Analytics
+$router->add('GET','/admin/dashboard', fn()=> $adminCtrl->dashboardStats(), fn()=> $authMiddleware->validate());
 
 // Dispatch
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
