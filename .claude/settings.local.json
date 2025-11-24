@@ -9,7 +9,9 @@
       "Bash(composer show:*)",
       "Bash(findstr:*)",
       "Bash(composer require:*)",
-      "Bash(mysql --version:*)"
+      "Bash(mysql --version:*)",
+      "Bash(echo:*)",
+      "Bash(timeout 30 php:*)"
     ],
     "deny": [],
     "ask": []
