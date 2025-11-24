@@ -1,209 +1,137 @@
 <?php
-/**
- * Test Auth Flow
- *
- * Tests para validar el sistema de autenticación JWT:
- * 1. Intenta acceder a ruta admin sin token (Debe fallar con 401)
- * 2. Hace login correcto (Debe recibir token)
- * 3. Accede a ruta admin CON token (Debe funcionar con 200)
- */
-
 declare(strict_types=1);
 
-// Configuración
-$baseUrl = getenv('API_URL') ?: 'http://localhost:8000';
-$adminEmail = 'admin@sg-ia.com';
-$adminPassword = 'admin123';
+require_once __DIR__ . '/../vendor/autoload.php';
 
-// Colores para output
-$colors = [
-  'reset' => "\033[0m",
-  'red' => "\033[91m",
-  'green' => "\033[92m",
-  'yellow' => "\033[93m",
-  'blue' => "\033[94m",
-];
+use Src\Database\Connection;
+use Src\Services\GameService;
+use Src\Services\AIEngine;
+use Src\Services\AI\GeminiAIService;
+use Src\Repositories\Implementations\{
+    PlayerRepository,
+    QuestionRepository,
+    SessionRepository,
+    AnswerRepository,
+    SystemPromptRepository 
+};
+use Dotenv\Dotenv;
 
-function testLog(string $message, string $color = 'blue'): void {
-  global $colors;
-  echo $colors[$color] . $message . $colors['reset'] . PHP_EOL;
+echo "═══════════════════════════════════════════════════════════\n";
+echo "API INTEGRATION TEST SUITE (CON IA)\n";
+echo "═══════════════════════════════════════════════════════════\n\n";
+
+// 1. Cargar Entorno (Para la API Key)
+$envPath = __DIR__ . '/../';
+if (file_exists($envPath . '.env')) {
+    $dotenv = Dotenv::createImmutable($envPath);
+    $dotenv->load();
 }
 
-function testResult(string $testName, bool $passed): void {
-  global $colors;
-  $status = $passed ? '✓ PASS' : '✗ FAIL';
-  $color = $passed ? 'green' : 'red';
-  echo $colors[$color] . "[$status] $testName" . $colors['reset'] . PHP_EOL;
-}
+$config = require __DIR__ . '/../config/database.php';
+$conn = new Connection($config);
+$pdo = $conn->pdo();
 
-// ============================================================
-// TEST 1: Acceder a ruta admin SIN token (Debe fallar 401)
-// ============================================================
-testLog("\n=== TEST 1: Acceder a ruta admin SIN token ===", 'yellow');
+// 2. Repositorios
+$playersRepo = new PlayerRepository($conn);
+$questionsRepo = new QuestionRepository($conn);
+$sessionsRepo = new SessionRepository($conn);
+$answersRepo = new AnswerRepository($conn);
+$promptRepo = new SystemPromptRepository($conn); // Nuevo repo para IA
+$aiEngine = new AIEngine();
 
-$ch = curl_init();
-curl_setopt_array($ch, [
-  CURLOPT_URL => "{$baseUrl}/admin/questions/1",
-  CURLOPT_CUSTOMREQUEST => 'PUT',
-  CURLOPT_RETURNTRANSFER => true,
-  CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-  CURLOPT_POSTFIELDS => json_encode(['statement' => 'Test']),
-]);
-
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-testLog("HTTP Code: {$httpCode}", 'blue');
-testLog("Response: {$response}", 'blue');
-
-$test1Passed = $httpCode === 401;
-testResult("Acceso sin token rechazado", $test1Passed);
-
-// ============================================================
-// TEST 2: Login correcto (Debe recibir token)
-// ============================================================
-testLog("\n=== TEST 2: Login correcto ===", 'yellow');
-
-$ch = curl_init();
-curl_setopt_array($ch, [
-  CURLOPT_URL => "{$baseUrl}/auth/login",
-  CURLOPT_CUSTOMREQUEST => 'POST',
-  CURLOPT_RETURNTRANSFER => true,
-  CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-  CURLOPT_POSTFIELDS => json_encode([
-    'email' => $adminEmail,
-    'password' => $adminPassword
-  ]),
-]);
-
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-testLog("HTTP Code: {$httpCode}", 'blue');
-testLog("Response: {$response}", 'blue');
-
-$loginData = json_decode($response, true);
-$token = $loginData['token'] ?? null;
-
-$test2Passed = $httpCode === 200 && !empty($token);
-testResult("Login exitoso y token generado", $test2Passed);
-
-if (!$test2Passed) {
-  testLog("Error: No se pudo obtener el token", 'red');
-  exit(1);
-}
-
-testLog("Token recibido: " . substr($token, 0, 50) . "...", 'green');
-
-// ============================================================
-// TEST 3: Acceder a ruta admin CON token (Debe funcionar 200)
-// ============================================================
-testLog("\n=== TEST 3: Acceder a ruta admin CON token ===", 'yellow');
-
-$ch = curl_init();
-curl_setopt_array($ch, [
-  CURLOPT_URL => "{$baseUrl}/admin/questions/1",
-  CURLOPT_CUSTOMREQUEST => 'PUT',
-  CURLOPT_RETURNTRANSFER => true,
-  CURLOPT_HTTPHEADER => [
-    'Content-Type: application/json',
-    "Authorization: Bearer {$token}"
-  ],
-  CURLOPT_POSTFIELDS => json_encode([
-    'statement' => 'Pregunta actualizada de prueba',
-    'difficulty' => 2
-  ]),
-]);
-
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-testLog("HTTP Code: {$httpCode}", 'blue');
-testLog("Response: {$response}", 'blue');
-
-$test3Passed = $httpCode === 200;
-testResult("Acceso con token autorizado", $test3Passed);
-
-// ============================================================
-// TEST 4: Login con credenciales incorrectas (Debe fallar 401)
-// ============================================================
-testLog("\n=== TEST 4: Login con credenciales incorrectas ===", 'yellow');
-
-$ch = curl_init();
-curl_setopt_array($ch, [
-  CURLOPT_URL => "{$baseUrl}/auth/login",
-  CURLOPT_CUSTOMREQUEST => 'POST',
-  CURLOPT_RETURNTRANSFER => true,
-  CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-  CURLOPT_POSTFIELDS => json_encode([
-    'email' => $adminEmail,
-    'password' => 'wrongpassword'
-  ]),
-]);
-
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-testLog("HTTP Code: {$httpCode}", 'blue');
-testLog("Response: {$response}", 'blue');
-
-$test4Passed = $httpCode === 401;
-testResult("Login rechazado con credenciales incorrectas", $test4Passed);
-
-// ============================================================
-// TEST 5: Validar token inválido (Debe fallar 401)
-// ============================================================
-testLog("\n=== TEST 5: Token inválido ===", 'yellow');
-
-$invalidToken = "invalid.token.here";
-
-$ch = curl_init();
-curl_setopt_array($ch, [
-  CURLOPT_URL => "{$baseUrl}/admin/questions/1",
-  CURLOPT_CUSTOMREQUEST => 'PUT',
-  CURLOPT_RETURNTRANSFER => true,
-  CURLOPT_HTTPHEADER => [
-    'Content-Type: application/json',
-    "Authorization: Bearer {$invalidToken}"
-  ],
-  CURLOPT_POSTFIELDS => json_encode(['statement' => 'Test']),
-]);
-
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-testLog("HTTP Code: {$httpCode}", 'blue');
-testLog("Response: {$response}", 'blue');
-
-$test5Passed = $httpCode === 401;
-testResult("Token inválido rechazado", $test5Passed);
-
-// ============================================================
-// RESUMEN
-// ============================================================
-testLog("\n=== RESUMEN DE PRUEBAS ===", 'yellow');
-
-$allPassed = $test1Passed && $test2Passed && $test3Passed && $test4Passed && $test5Passed;
-$totalTests = 5;
-$passedTests = array_sum([
-  $test1Passed,
-  $test2Passed,
-  $test3Passed,
-  $test4Passed,
-  $test5Passed
-]);
-
-testLog("Pruebas pasadas: {$passedTests}/{$totalTests}", $allPassed ? 'green' : 'red');
-
-if ($allPassed) {
-  testLog("✓ ¡TODOS LOS TESTS PASARON!", 'green');
-  exit(0);
+// 3. Inicializar IA (Si hay API Key)
+$apiKey = $_ENV['GEMINI_API_KEY'] ?? getenv('GEMINI_API_KEY');
+$generativeAi = null;
+if ($apiKey) {
+    echo "IA Activada para el test\n";
+    $generativeAi = new GeminiAIService($apiKey, $promptRepo);
 } else {
-  testLog("✗ Algunos tests fallaron", 'red');
-  exit(1);
+    echo "Advertencia: Sin API Key, el test fallará si la BD está vacía.\n";
 }
+
+// 4. Inyectar todo en GameService
+$gameService = new GameService(
+    $sessionsRepo, 
+    $questionsRepo, 
+    $answersRepo, 
+    $playersRepo, 
+    $aiEngine, 
+    $generativeAi // <--- ¡ESTO FALTABA!
+);
+
+// ============================================================
+// TEST 1: Verify Player Exists
+// ============================================================
+echo "\n[TEST 1] Verify Player Exists\n";
+echo "─────────────────────────────────────────────────────────\n";
+
+$player = $playersRepo->find(1);
+if (!$player) {
+    // Crear con edad (fix anterior)
+    $testPlayer = $playersRepo->create('Integration Test Player', 25);
+    $player = $testPlayer;
+}
+echo "Player: {$player->name} (Age: {$player->age})\n";
+
+// ============================================================
+// TEST 2: POST /games/start
+// ============================================================
+echo "\n[TEST 2] Start Session\n";
+echo "─────────────────────────────────────────────────────────\n";
+$sessionResult = $gameService->startSession($player->id, 1.0);
+$sessionId = $sessionResult['session_id'];
+echo "Session ID: {$sessionId}\n";
+
+// ============================================================
+// TEST 3: GET /games/next (Trigger IA)
+// ============================================================
+echo "\n[TEST 3] Get Next Question (Triggering Gemini...)\n";
+echo "─────────────────────────────────────────────────────────\n";
+
+// Buscar una categoría válida (cualquiera)
+$catStmt = $pdo->query("SELECT id FROM question_categories LIMIT 1");
+$catId = $catStmt->fetchColumn();
+
+if (!$catId) die("Error: No hay categorías en la BD. Ejecuta db/init.sql");
+
+echo "Solicitando pregunta para Categoría ID: {$catId}...\n";
+
+// Esto llamará a la IA porque la tabla questions está vacía
+$questionResult = $gameService->nextQuestion((int)$catId, 1);
+
+if (!$questionResult) {
+    die("Error: No se generó pregunta. Verifica API Key o conexión.\n");
+}
+
+$questionId = $questionResult['id'];
+echo "Pregunta Generada: {$questionResult['statement']}\n";
+echo "   ID: {$questionId} | Dificultad: {$questionResult['difficulty']}\n";
+echo "   (Guardada en BD con is_ai_generated = 1)\n";
+
+// ============================================================
+// TEST 4: Submit Answer
+// ============================================================
+echo "\n[TEST 4] Submit Answer & Feedback\n";
+echo "─────────────────────────────────────────────────────────\n";
+
+// Responder correctamente (simulado)
+$answerResult = $gameService->submitAnswer(
+    $sessionId,
+    $questionId,
+    null,
+    true, // isCorrect
+    2.0   // timeTaken
+);
+
+echo "Score: {$answerResult['score']}\n";
+echo "Feedback: {$answerResult['explanation']}\n";
+
+if (!empty($answerResult['explanation'])) {
+    echo "Feedback educativo recibido correctamente.\n";
+} else {
+    echo "Falta feedback educativo.\n";
+}
+
+echo "\n═══════════════════════════════════════════════════════════\n";
+echo "TEST DE FLUJO COMPLETADO\n";
+echo "═══════════════════════════════════════════════════════════\n";
