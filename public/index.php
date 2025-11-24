@@ -5,12 +5,13 @@ use Src\Database\Connection;
 use Src\Utils\Router;
 use Src\Utils\Response;
 use Src\Middleware\CorsMiddleware;
+use Src\Middleware\AuthMiddleware;
 
 use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository};
 use Src\Repositories\Interfaces\{PlayerRepositoryInterface,QuestionRepositoryInterface,SessionRepositoryInterface,AnswerRepositoryInterface};
 
-use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController};
-use Src\Services\{GameService,AIEngine};
+use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController};
+use Src\Services\{GameService,AIEngine,AuthService};
 use Src\Services\AI\GeminiAIService;
 
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -43,6 +44,9 @@ $gameCtrl   = new GameController($gameService);
 $questionCtrl = new QuestionController($questionsRepo);
 $statsCtrl  = new StatisticsController($conn);
 $adminCtrl  = new AdminController($questionsRepo);
+$authService = new AuthService($conn->pdo());
+$authCtrl   = new AuthController($authService);
+$authMiddleware = new AuthMiddleware($authService);
 
 // Router
 $router = new Router();
@@ -52,24 +56,27 @@ $router->add('GET','/', fn()=> \Src\Utils\Response::json([
   'ok'=>true,'service'=>'sg-ia-api','time'=>date('c')
 ]));
 
-// Players
+// Auth (Public)
+$router->add('POST','/auth/login', fn()=> $authCtrl->login());
+
+// Players (Public)
 $router->add('POST','/players', fn()=> $playerCtrl->create());
 $router->add('GET','/players', fn()=> $playerCtrl->index());
 
-// Game
+// Game (Public)
 $router->add('POST','/games/start', fn()=> $gameCtrl->start());
 $router->add('GET','/games/next', fn()=> $gameCtrl->next());
 $router->add('POST','/games/{id}/answer', fn($p)=> $gameCtrl->answer($p));
 
-// Questions
+// Questions (Public)
 $router->add('GET','/questions/{id}', fn($p)=> $questionCtrl->find($p));
 
-// Stats
+// Stats (Public)
 $router->add('GET','/stats/session/{id}', fn($p)=> $statsCtrl->session($p));
 
-// Admin
-$router->add('PUT','/admin/questions/{id}', fn($p)=> $adminCtrl->updateQuestion($p));
-$router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $adminCtrl->verifyQuestion($p));
+// Admin (Protected)
+$router->add('PUT','/admin/questions/{id}', fn($p)=> $adminCtrl->updateQuestion($p), fn()=> $authMiddleware->validate());
+$router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $adminCtrl->verifyQuestion($p), fn()=> $authMiddleware->validate());
 
 // Dispatch
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
