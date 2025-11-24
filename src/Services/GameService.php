@@ -177,7 +177,7 @@ final class GameService {
 
     // Obtener feedback educativo
     $explanation = $this->questions->getExplanation($questionId);
-    $correctOptionId = $this->getCorrectOptionId($questionId);
+    $correctOptionId = $this->questions->getCorrectOptionId($questionId);
 
     return [
       'score' => $score,
@@ -187,24 +187,5 @@ final class GameService {
       'explanation' => $explanation,
       'correct_option_id' => $correctOptionId
     ];
-  }
-
-  /**
-   * Obtiene el ID de la opción correcta de una pregunta
-   *
-   * @param int $questionId ID de la pregunta
-   * @return int|null ID de la opción correcta o null si no existe
-   */
-  private function getCorrectOptionId(int $questionId): ?int {
-    $pdo = $this->questions->getPdo();
-    if (!$pdo) {
-      return null;
-    }
-
-    $st = $pdo->prepare("SELECT id FROM question_options WHERE question_id = :question_id AND is_correct = 1 LIMIT 1");
-    $st->execute([':question_id' => $questionId]);
-    $result = $st->fetch();
-
-    return $result ? (int)$result['id'] : null;
   }
 }

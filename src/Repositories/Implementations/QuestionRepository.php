@@ -202,6 +202,20 @@ final class QuestionRepository implements QuestionRepositoryInterface {
   }
 
   /**
+   * Obtiene el ID de la opción correcta de una pregunta
+   *
+   * @param int $questionId ID de la pregunta
+   * @return int|null ID de la opción correcta o null si no existe
+   */
+  public function getCorrectOptionId(int $questionId): ?int {
+    $sql = "SELECT id FROM question_options WHERE question_id = :question_id AND is_correct = 1 LIMIT 1";
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute([':question_id' => $questionId]);
+    $result = $st->fetch();
+    return $result ? (int)$result['id'] : null;
+  }
+
+  /**
    * Retorna la instancia de PDO para operaciones directas
    *
    * @return \PDO
