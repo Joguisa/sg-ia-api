@@ -1,0 +1,578 @@
+{
+  "info": {
+    "name": "SG-IA - Diagnóstico Banco de Preguntas",
+    "description": "Suite de pruebas para validar reutilización y eficiencia en generación de preguntas",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Setup - Auth & Admin",
+      "item": [
+        {
+          "name": "LOGIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@sg-ia.com\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('token', jsonData.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CREATE TEST PLAYER",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DiagnosticoQA\",\n  \"age\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/players",
+              "host": ["{{base_url}}"],
+              "path": ["players"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('player_id', jsonData.player.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. FASE DE DIAGNÓSTICO: Reutilización",
+      "item": [
+        {
+          "name": "1.1 - Limpiar preguntas existentes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "dashboard"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado inicial del dashboard', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  const totalQuestions = jsonData.summary.total_questions;",
+                  "  pm.collectionVariables.set('initial_questions', totalQuestions);",
+                  "  console.log('Preguntas existentes: ' + totalQuestions);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 - Generar batch de 5 preguntas",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 5,\n  \"category_id\": 1,\n  \"difficulty\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/generate-batch",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "generate-batch"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Batch generation status 201', function() {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const jsonData = pm.response.json();",
+                  "pm.test('Batch generó 5 preguntas', function() {",
+                  "  pm.expect(jsonData.generated).to.equal(5);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('generated_questions', jsonData.questions);",
+                  "pm.collectionVariables.set('question_ids_batch', jsonData.questions.map(q => q.id).join(','));",
+                  "console.log('IDs generados:', jsonData.questions.map(q => q.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 - Obtener pregunta #1 (primera call a /games/next)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/games/next?category_id=1&difficulty=2",
+              "host": ["{{base_url}}"],
+              "path": ["games", "next"],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "1"
+                },
+                {
+                  "key": "difficulty",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('q1_id', jsonData.question.id);",
+                  "pm.collectionVariables.set('q1_statement', jsonData.question.statement);",
+                  "console.log('Pregunta 1:', jsonData.question.id, '-', jsonData.question.statement.substring(0, 50) + '...');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 - Obtener pregunta #2 (segunda call a /games/next)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/games/next?category_id=1&difficulty=2",
+              "host": ["{{base_url}}"],
+              "path": ["games", "next"],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "1"
+                },
+                {
+                  "key": "difficulty",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('q2_id', jsonData.question.id);",
+                  "pm.collectionVariables.set('q2_statement', jsonData.question.statement);",
+                  "console.log('Pregunta 2:', jsonData.question.id, '-', jsonData.question.statement.substring(0, 50) + '...');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 - Obtener pregunta #3 (tercera call a /games/next)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/games/next?category_id=1&difficulty=2",
+              "host": ["{{base_url}}"],
+              "path": ["games", "next"],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "1"
+                },
+                {
+                  "key": "difficulty",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('q3_id', jsonData.question.id);",
+                  "pm.collectionVariables.set('q3_statement', jsonData.question.statement);",
+                  "console.log('Pregunta 3:', jsonData.question.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 - TEST: ¿Se reutilizan las preguntas?",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/games/next?category_id=1&difficulty=2",
+              "host": ["{{base_url}}"],
+              "path": ["games", "next"],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "1"
+                },
+                {
+                  "key": "difficulty",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "const q4_id = jsonData.question.id;",
+                  "const q1_id = pm.collectionVariables.get('q1_id');",
+                  "const q2_id = pm.collectionVariables.get('q2_id');",
+                  "const q3_id = pm.collectionVariables.get('q3_id');",
+                  "",
+                  "console.log('\\n=== DIAGNÓSTICO DE REUTILIZACIÓN ===');",
+                  "console.log('Pregunta 1 ID:', q1_id);",
+                  "console.log('Pregunta 2 ID:', q2_id);",
+                  "console.log('Pregunta 3 ID:', q3_id);",
+                  "console.log('Pregunta 4 ID:', q4_id);",
+                  "",
+                  "const ids = [q1_id, q2_id, q3_id, q4_id];",
+                  "const uniqueIds = new Set(ids);",
+                  "",
+                  "if (uniqueIds.size === 1) {",
+                  "  console.log('✓ CORRECTO: Se reutiliza la MISMA pregunta');",
+                  "} else if (uniqueIds.size === 4) {",
+                  "  console.log('✗ PROBLEMA: Se generan 4 preguntas DIFERENTES (ineficiente)');",
+                  "} else {",
+                  "  console.log('⚠️  Se reutilizan PARCIALMENTE:', uniqueIds.size, 'preguntas diferentes');",
+                  "}",
+                  "",
+                  "pm.test('DIAGNÓSTICO - Reutilización de preguntas', function() {",
+                  "  // Este test DOCUMENTA el comportamiento esperado vs actual",
+                  "  if (uniqueIds.size === 1) {",
+                  "    pm.expect(true).to.equal(true);  // ✓ Esperado",
+                  "  } else {",
+                  "    // Falla esperada - indica el problema",
+                  "    console.log('⚠️  PROBLEMA ENCONTRADO: Preguntas no se reutilizan');",
+                  "    pm.expect(uniqueIds.size).to.equal(1);  // Este test FALLARÁ en el sistema actual",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. PRUEBA DE EFICIENCIA: Costo API",
+      "item": [
+        {
+          "name": "2.1 - Contar preguntas ANTES de batch",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "dashboard"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "const before = jsonData.summary.total_questions;",
+                  "pm.collectionVariables.set('total_before', before);",
+                  "console.log('Total preguntas ANTES:', before);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 - Generar batch de 10 preguntas (para test de costo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 10,\n  \"category_id\": 1,\n  \"difficulty\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/generate-batch",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "generate-batch"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Batch generation completed', function() {",
+                  "  pm.response.to.have.status(201);",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.collectionVariables.set('batch_generated', jsonData.generated);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 - Contar preguntas DESPUÉS de batch",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "dashboard"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "const after = jsonData.summary.total_questions;",
+                  "const before = pm.collectionVariables.get('total_before');",
+                  "const diff = after - before;",
+                  "",
+                  "console.log('\\n=== ANÁLISIS DE COSTO API ===');",
+                  "console.log('Preguntas ANTES:', before);",
+                  "console.log('Preguntas DESPUÉS:', after);",
+                  "console.log('Diferencia:', diff);",
+                  "console.log('Generadas solicitadas:', pm.collectionVariables.get('batch_generated'));",
+                  "",
+                  "if (diff === 10) {",
+                  "  console.log('✓ Todas las preguntas se guardaron correctamente');",
+                  "} else if (diff < 10) {",
+                  "  console.log('⚠️  Algunas generaciones fallaron');",
+                  "} else {",
+                  "  console.log('⚠️  Número inesperado de preguntas');",
+                  "}",
+                  "",
+                  "pm.test('Batch insert confirmation', function() {",
+                  "  pm.expect(diff).to.equal(10);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. PRUEBA: Verificación Admin",
+      "item": [
+        {
+          "name": "3.1 - Obtener pregunta sin verificar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/games/next?category_id=1&difficulty=3",
+              "host": ["{{base_url}}"],
+              "path": ["games", "next"],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "1"
+                },
+                {
+                  "key": "difficulty",
+                  "value": "3"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "",
+                  "pm.test('¿Pregunta tiene is_ai_generated?', function() {",
+                  "  if (jsonData.question.is_ai_generated !== undefined) {",
+                  "    console.log('is_ai_generated:', jsonData.question.is_ai_generated);",
+                  "    pm.expect(true).to.equal(true);",
+                  "  } else {",
+                  "    console.log('⚠️  Campo is_ai_generated no retornado en response');",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('¿Pregunta tiene admin_verified?', function() {",
+                  "  if (jsonData.question.admin_verified !== undefined) {",
+                  "    console.log('admin_verified:', jsonData.question.admin_verified);",
+                  "  } else {",
+                  "    console.log('⚠️  Campo admin_verified no retornado en response');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "player_id",
+      "value": "",
+      "type": "number"
+    },
+    {
+      "key": "initial_questions",
+      "value": "0",
+      "type": "number"
+    },
+    {
+      "key": "q1_id",
+      "value": "",
+      "type": "number"
+    },
+    {
+      "key": "q2_id",
+      "value": "",
+      "type": "number"
+    },
+    {
+      "key": "q3_id",
+      "value": "",
+      "type": "number"
+    },
+    {
+      "key": "q1_statement",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "q2_statement",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "q3_statement",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "generated_questions",
+      "value": "[]",
+      "type": "json"
+    },
+    {
+      "key": "question_ids_batch",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "total_before",
+      "value": "0",
+      "type": "number"
+    },
+    {
+      "key": "batch_generated",
+      "value": "0",
+      "type": "number"
+    }
+  ]
+}
