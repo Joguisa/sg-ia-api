@@ -8,8 +8,8 @@ use Src\Middleware\CorsMiddleware;
 use Src\Middleware\AuthMiddleware;
 use Dotenv\Dotenv;
 
-use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository};
-use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController};
+use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository};
+use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController,CategoryController};
 use Src\Services\{GameService,AIEngine,AuthService};
 use Src\Services\AI\GeminiAIService;
 
@@ -35,6 +35,7 @@ $questionsRepo = new QuestionRepository($conn);
 $sessionsRepo  = new SessionRepository($conn);
 $answersRepo   = new AnswerRepository($conn);
 $promptsRepo   = new SystemPromptRepository($conn);
+$categoriesRepo = new CategoryRepository($conn);
 $ai            = new AIEngine();
 
 $generativeAi = null;
@@ -49,6 +50,7 @@ $gameCtrl     = new GameController($gameService);
 $questionCtrl = new QuestionController($questionsRepo);
 $statsCtrl    = new StatisticsController($conn);
 $adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService);
+$categoryCtrl = new CategoryController($categoriesRepo);
 $authService  = new AuthService($conn->pdo());
 $authCtrl     = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authService);
@@ -75,11 +77,14 @@ $router->add('POST','/games/{id}/answer', fn($p)=> $gameCtrl->answer($p));
 
 // Questions (Public)
 $router->add('GET','/questions/{id}', fn($p)=> $questionCtrl->find($p));
+$router->add('GET','/admin/questions', fn()=> $questionCtrl->list(), fn()=> $authMiddleware->validate());
+$router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $questionCtrl->verify($p), fn()=> $authMiddleware->validate());
+$router->add('DELETE','/admin/questions/{id}', fn($p)=> $questionCtrl->delete($p), fn()=> $authMiddleware->validate());
 
 // Stats (Public)
 $router->add('GET','/stats/session/{id}', fn($p)=> $statsCtrl->session($p));
 
-$router->add('GET','/stats/player/{id}', fn($p)=> $statsCtrl->playerStats($p)); 
+$router->add('GET','/stats/player/{id}', fn($p)=> $statsCtrl->playerStats($p));
 $router->add('GET','/stats/leaderboard', fn()=> $statsCtrl->leaderboard());
 
 // Question Management
@@ -91,6 +96,7 @@ $router->add('GET','/admin/config/prompt', fn()=> $adminCtrl->getPromptConfig(),
 $router->add('PUT','/admin/config/prompt', fn()=> $adminCtrl->updatePromptConfig(), fn()=> $authMiddleware->validate());
 
 // Category Management
+$router->add('GET','/admin/categories', fn()=> $categoryCtrl->list(), fn()=> $authMiddleware->validate());
 $router->add('POST','/admin/categories', fn()=> $adminCtrl->createCategory(), fn()=> $authMiddleware->validate());
 $router->add('DELETE','/admin/categories/{id}', fn($p)=> $adminCtrl->deleteCategory($p), fn()=> $authMiddleware->validate());
 

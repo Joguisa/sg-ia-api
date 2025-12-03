@@ -12,4 +12,7 @@ interface QuestionRepositoryInterface {
   public function getExplanation(int $questionId): ?string;
   public function getCorrectOptionId(int $questionId): ?int;
   public function getPdo(): ?\PDO;
+  public function findAll(): array;
+  public function updateVerification(int $id, bool $isVerified): bool;
+  public function delete(int $id): bool;
 }

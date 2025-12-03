@@ -443,4 +443,114 @@ final class AdminController {
       Response::json(['ok'=>false,'error'=>'Failed to fetch dashboard stats: ' . $e->getMessage()], 500);
     }
   }
+
+  /**
+   * Obtener todas las preguntas activas con información de categoría
+   *
+   * Endpoint: GET /admin/questions
+   *
+   * @return void
+   */
+  public function getQuestions(): void {
+    try {
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        return;
+      }
+
+      $sql = "SELECT q.id, q.statement, q.difficulty, q.category_id, qc.name AS category_name,
+                     q.is_ai_generated, q.admin_verified
+              FROM questions q
+              LEFT JOIN question_categories qc ON qc.id = q.category_id
+              WHERE q.is_active = 1
+              ORDER BY q.id DESC";
+
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute();
+      $questions = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+      Response::json([
+        'ok' => true,
+        'questions' => $questions ?: []
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok'=>false,'error'=>'Failed to fetch questions: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Obtener todas las categorías
+   *
+   * Endpoint: GET /admin/categories
+   *
+   * @return void
+   */
+  public function getCategories(): void {
+    try {
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        return;
+      }
+
+      $sql = "SELECT id, name, description FROM question_categories";
+
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute();
+      $categories = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+      Response::json([
+        'ok' => true,
+        'categories' => $categories ?: []
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok'=>false,'error'=>'Failed to fetch categories: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Eliminar una pregunta
+   *
+   * Endpoint: DELETE /admin/questions/{id}
+   *
+   * @param array $params Parámetros de la ruta (contiene 'id')
+   * @return void
+   */
+  public function deleteQuestion(array $params): void {
+    $questionId = (int)($params['id'] ?? 0);
+
+    if ($questionId <= 0) {
+      Response::json(['ok'=>false,'error'=>'Invalid question ID'], 400);
+      return;
+    }
+
+    try {
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        return;
+      }
+
+      // Verificar que la pregunta existe
+      $checkStmt = $pdo->prepare("SELECT id FROM questions WHERE id = ?");
+      $checkStmt->execute([$questionId]);
+
+      if (!$checkStmt->fetch()) {
+        Response::json(['ok'=>false,'error'=>'Question not found'], 404);
+        return;
+      }
+
+      $stmt = $pdo->prepare("DELETE FROM questions WHERE id = ?");
+      $success = $stmt->execute([$questionId]);
+
+      if ($success) {
+        Response::json(['ok'=>true,'message'=>'Question deleted successfully'], 200);
+      } else {
+        Response::json(['ok'=>false,'error'=>'Failed to delete question'], 500);
+      }
+    } catch (\Exception $e) {
+      Response::json(['ok'=>false,'error'=>'Error deleting question: ' . $e->getMessage()], 500);
+    }
+  }
 }

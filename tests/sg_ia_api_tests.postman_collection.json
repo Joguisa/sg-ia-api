@@ -1,0 +1,632 @@
+{
+  "info": {
+    "name": "SG-IA API Test Suite",
+    "description": "Comprehensive test collection for SG-IA API - QA Automation Suite",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Auth & Admin",
+      "item": [
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@sg-ia.com\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains token', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData).to.have.property('token');",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "});",
+                  "",
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('token', jsonData.token);",
+                  "pm.test('Token saved to collection variable', function() {",
+                  "  pm.expect(pm.collectionVariables.get('token')).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /admin/dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "dashboard"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Dashboard Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Dashboard response contains summary', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('summary');",
+                  "  pm.expect(jsonData.summary).to.have.all.keys('total_players', 'total_sessions', 'total_questions', 'pending_verification');",
+                  "});",
+                  "",
+                  "pm.test('Dashboard contains hardest and easiest questions', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData).to.have.property('hardest_questions');",
+                  "  pm.expect(jsonData).to.have.property('easiest_questions');",
+                  "  pm.expect(jsonData.hardest_questions).to.be.an('array');",
+                  "  pm.expect(jsonData.easiest_questions).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /admin/config/prompt",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/config/prompt",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "config", "prompt"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Prompt Config Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Prompt Config has expected structure', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('prompt');",
+                  "  pm.expect(jsonData.prompt).to.have.all.keys('id', 'prompt_text', 'temperature', 'is_active');",
+                  "  pm.expect(jsonData.prompt.temperature).to.be.a('number');",
+                  "  pm.expect(jsonData.prompt.temperature).to.be.within(0, 1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /admin/config/prompt",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt_text\": \"You are an expert quiz master creating challenging questions for educational purposes. Create questions that test understanding, not just memorization.\",\n  \"temperature\": 0.8\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/config/prompt",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "config", "prompt"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Prompt Update Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Prompt update response is successful', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData.message).to.include('successfully');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Jugador",
+      "item": [
+        {
+          "name": "POST /players - Create TestQA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TestQA\",\n  \"age\": 25\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/players",
+              "host": ["{{base_url}}"],
+              "path": ["players"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Player Creation Status is 201', function() {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Player response contains id', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData.player).to.have.property('id');",
+                  "  pm.expect(jsonData.player.name).to.equal('TestQA');",
+                  "  pm.expect(jsonData.player.age).to.equal(25);",
+                  "});",
+                  "",
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('player_id', jsonData.player.id);",
+                  "pm.test('Player ID saved to collection variable', function() {",
+                  "  pm.expect(pm.collectionVariables.get('player_id')).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /players",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/players",
+              "host": ["{{base_url}}"],
+              "path": ["players"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Players List Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Players list is not empty', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData.players).to.be.an('array');",
+                  "  pm.expect(jsonData.players.length).to.be.greaterThan(0);",
+                  "});",
+                  "",
+                  "pm.test('Players have expected structure', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  jsonData.players.forEach(function(player) {",
+                  "    pm.expect(player).to.have.all.keys('id', 'name', 'age', 'created_at');",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Flujo de Juego",
+      "item": [
+        {
+          "name": "POST /games/start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"player_id\": {{player_id}},\n  \"start_difficulty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/games/start",
+              "host": ["{{base_url}}"],
+              "path": ["games", "start"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Game Start Status is 201', function() {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Game session created with valid structure', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('session_id');",
+                  "  pm.expect(jsonData).to.have.property('player_id');",
+                  "  pm.expect(jsonData).to.have.property('current_difficulty');",
+                  "  pm.expect(jsonData.player_id).to.equal(pm.collectionVariables.get('player_id'));",
+                  "});",
+                  "",
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('session_id', jsonData.session_id);",
+                  "pm.test('Session ID saved to collection variable', function() {",
+                  "  pm.expect(pm.collectionVariables.get('session_id')).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /games/next - Get Question",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/games/next?category_id=1&difficulty=1",
+              "host": ["{{base_url}}"],
+              "path": ["games", "next"],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "1"
+                },
+                {
+                  "key": "difficulty",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Get Next Question Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Question has expected structure', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('question');",
+                  "  pm.expect(jsonData.question).to.have.all.keys('id', 'statement', 'category_id', 'difficulty', 'options');",
+                  "  pm.expect(jsonData.question.options).to.be.an('array');",
+                  "  pm.expect(jsonData.question.options.length).to.be.greaterThan(0);",
+                  "});",
+                  "",
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('question_id', jsonData.question.id);",
+                  "pm.collectionVariables.set('category_id', jsonData.question.category_id);",
+                  "pm.test('Question ID and Category ID saved to collection variables', function() {",
+                  "  pm.expect(pm.collectionVariables.get('question_id')).to.be.a('number');",
+                  "  pm.expect(pm.collectionVariables.get('category_id')).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /games/{id}/answer - Correct Answer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_id\": {{question_id}},\n  \"is_correct\": true,\n  \"time_taken\": 2.5\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/games/{{session_id}}/answer",
+              "host": ["{{base_url}}"],
+              "path": ["games", "{{session_id}}", "answer"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Correct Answer Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Correct answer response has valid structure', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('next_difficulty');",
+                  "  pm.expect(jsonData).to.have.property('explanation');",
+                  "  pm.expect(jsonData.next_difficulty).to.be.a('number');",
+                  "});",
+                  "",
+                  "pm.test('Difficulty increases on correct answer', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.next_difficulty).to.be.greaterThan(1);",
+                  "});",
+                  "",
+                  "pm.test('Explanation is provided', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.explanation).to.be.a('string');",
+                  "  pm.expect(jsonData.explanation.length).to.be.greaterThan(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /games/{id}/answer - Incorrect Answer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_id\": {{question_id}},\n  \"is_correct\": false,\n  \"time_taken\": 5.0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/games/{{session_id}}/answer",
+              "host": ["{{base_url}}"],
+              "path": ["games", "{{session_id}}", "answer"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Incorrect Answer Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Incorrect answer response has valid structure', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('lives');",
+                  "  pm.expect(jsonData).to.have.property('explanation');",
+                  "  pm.expect(jsonData.lives).to.be.a('number');",
+                  "});",
+                  "",
+                  "pm.test('Lives decreased on incorrect answer', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.lives).to.be.lessThan(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Estadísticas",
+      "item": [
+        {
+          "name": "GET /stats/session/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/stats/session/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["stats", "session", "{{session_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Session Stats Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Session stats has valid structure', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('stats');",
+                  "  pm.expect(jsonData.stats).to.be.an('object');",
+                  "});",
+                  "",
+                  "pm.test('Session stats contains required fields', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  const stats = jsonData.stats;",
+                  "  // Verificar que existan campos comunes en stats",
+                  "  pm.expect(Object.keys(stats).length).to.be.greaterThan(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /stats/player/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/stats/player/{{player_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["stats", "player", "{{player_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Player Stats Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Player stats has valid structure', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('player_id');",
+                  "  pm.expect(jsonData).to.have.property('global');",
+                  "  pm.expect(jsonData).to.have.property('topics');",
+                  "});",
+                  "",
+                  "pm.test('Global stats has expected fields', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.global).to.have.all.keys('total_games', 'high_score', 'total_score', 'avg_score', 'avg_difficulty');",
+                  "});",
+                  "",
+                  "pm.test('Topics is an array', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.topics).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /stats/leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/stats/leaderboard",
+              "host": ["{{base_url}}"],
+              "path": ["stats", "leaderboard"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Leaderboard Status is 200', function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Leaderboard response is valid', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  pm.expect(jsonData.ok).to.equal(true);",
+                  "  pm.expect(jsonData).to.have.property('leaderboard');",
+                  "  pm.expect(jsonData.leaderboard).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('Leaderboard entries have required fields', function() {",
+                  "  const jsonData = pm.response.json();",
+                  "  if (jsonData.leaderboard.length > 0) {",
+                  "    const firstEntry = jsonData.leaderboard[0];",
+                  "    pm.expect(firstEntry).to.have.all.keys('rank', 'player_id', 'player_name', 'age', 'high_score', 'total_games', 'total_score', 'overall_accuracy');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "player_id",
+      "value": "",
+      "type": "number"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "number"
+    },
+    {
+      "key": "question_id",
+      "value": "",
+      "type": "number"
+    },
+    {
+      "key": "category_id",
+      "value": "",
+      "type": "number"
+    }
+  ]
+}

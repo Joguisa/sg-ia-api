@@ -223,4 +223,49 @@ final class QuestionRepository implements QuestionRepositoryInterface {
   public function getPdo(): ?\PDO {
     return $this->db->pdo();
   }
+
+  /**
+   * Obtiene todas las preguntas activas con información de categoría
+   *
+   * @return array Array de preguntas activas
+   */
+  public function findAll(): array {
+    $sql = "SELECT q.id, q.statement, q.difficulty, q.category_id, qc.name AS category_name,
+                   q.is_ai_generated, q.admin_verified
+            FROM questions q
+            LEFT JOIN question_categories qc ON qc.id = q.category_id
+            WHERE q.is_active = 1
+            ORDER BY q.id DESC";
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute();
+    return $st->fetchAll() ?: [];
+  }
+
+  /**
+   * Actualiza el estado de verificación de una pregunta
+   *
+   * @param int $id ID de la pregunta
+   * @param bool $isVerified Estado de verificación admin
+   * @return bool true si la actualización fue exitosa
+   */
+  public function updateVerification(int $id, bool $isVerified): bool {
+    $sql = "UPDATE questions SET admin_verified = :verified, updated_at = CURRENT_TIMESTAMP WHERE id = :id";
+    $st = $this->db->pdo()->prepare($sql);
+    return $st->execute([
+      ':id' => $id,
+      ':verified' => $isVerified ? 1 : 0
+    ]);
+  }
+
+  /**
+   * Elimina una pregunta de la base de datos
+   *
+   * @param int $id ID de la pregunta
+   * @return bool true si la eliminación fue exitosa
+   */
+  public function delete(int $id): bool {
+    $sql = "DELETE FROM questions WHERE id = :id";
+    $st = $this->db->pdo()->prepare($sql);
+    return $st->execute([':id' => $id]);
+  }
 }
