@@ -1,13 +1,13 @@
 <?php
 return [
   'app' => [
-    'env' => getenv('APP_ENV') ?: 'local',
-    'debug' => (bool)(getenv('APP_DEBUG') ?: true)
+    'env' => $_ENV['APP_ENV'] ?? 'local',
+    'debug' => (bool)($_ENV['APP_DEBUG'] ?? true)
   ],
   'db' => [
-    'dsn'  => getenv('DB_DSN') ?: 'mysql:host=127.0.0.1;dbname=sg_ia_db;charset=utf8mb4',
-    'user' => getenv('DB_USER') ?: '',
-    'pass' => getenv('DB_PASS') ?: '',
+    'dsn'  => $_ENV['DB_DSN'] ?? 'mysql:host=127.0.0.1;dbname=sg_ia_db;charset=utf8mb4',
+    'user' => $_ENV['DB_USER'] ?? '',
+    'pass' => $_ENV['DB_PASS'] ?? '',
     'opts' => [
       PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
       PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -20,7 +20,7 @@ return [
     'headers' => ['Content-Type','Authorization']
   ],
   'gemini' => [
-    'api_key' => getenv('GEMINI_API_KEY') ?: '',
-    'enabled' => (bool)(getenv('GEMINI_ENABLED') ?: false)
+    'api_key' => $_ENV['GEMINI_API_KEY'] ?? '',
+    'enabled' => (bool)($_ENV['GEMINI_ENABLED'] ?? false)
   ]
 ];

@@ -1,6 +1,6 @@
 -- =========================================================
 -- SG-IA DB: Script de Inicialización Unificado (Clean Install)
--- Versión: 1.0 (Ready for Frontend)
+-- Versión: 2.0 (FK Cascade Fix)
 -- =========================================================
 
 DROP DATABASE IF EXISTS sg_ia_db;
@@ -134,7 +134,7 @@ CREATE TABLE player_answers (
   CONSTRAINT ck_pa_time CHECK (time_taken_seconds >= 0.10 AND time_taken_seconds <= 120.00),
   CONSTRAINT ck_pa_diff CHECK (difficulty_at_answer >= 1.00 AND difficulty_at_answer <= 5.00),
   CONSTRAINT fk_pa_session  FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE,
-  CONSTRAINT fk_pa_question FOREIGN KEY (question_id) REFERENCES questions(id),
+  CONSTRAINT fk_pa_question FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE,
   CONSTRAINT fk_pa_option   FOREIGN KEY (selected_option_id) REFERENCES question_options(id),
   UNIQUE KEY uk_pa_once (session_id, question_id),
   KEY ix_pa_session_time  (session_id, answered_at),

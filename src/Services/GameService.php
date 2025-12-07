@@ -1,11 +1,13 @@
 <?php
+
 namespace Src\Services;
 
-use Src\Repositories\Interfaces\{SessionRepositoryInterface,QuestionRepositoryInterface,AnswerRepositoryInterface};
+use Src\Repositories\Interfaces\{SessionRepositoryInterface, QuestionRepositoryInterface, AnswerRepositoryInterface};
 use Src\Repositories\Interfaces\PlayerRepositoryInterface;
 use Src\Services\AI\GenerativeAIInterface;
 
-final class GameService {
+final class GameService
+{
   public function __construct(
     private SessionRepositoryInterface $sessions,
     private QuestionRepositoryInterface $questions,
@@ -15,7 +17,8 @@ final class GameService {
     private ?GenerativeAIInterface $generativeAi = null
   ) {}
 
-  public function startSession(int $playerId, float $startDifficulty = 1.0): array {
+  public function startSession(int $playerId, float $startDifficulty = 1.0): array
+  {
     if ($startDifficulty < 1.0 || $startDifficulty > 5.0) {
       throw new \RangeError("Dificultad inicial debe estar entre 1.0 y 5.0");
     }
@@ -34,34 +37,53 @@ final class GameService {
   /**
    * Obtiene la siguiente pregunta para el jugador.
    * Si no hay preguntas existentes para esa dificultad, genera una con IA.
+   * Excluye preguntas ya respondidas en la sesión actual.
    *
    * @param int $categoryId ID de la categoría
    * @param int $difficulty Dificultad requerida (1-5)
+   * @param int $sessionId ID de la sesión actual
    * @return array|null Array con datos de la pregunta o null si no se puede generar
    */
-  public function nextQuestion(int $categoryId, int $difficulty): ?array {
+  public function nextQuestion(int $categoryId, int $difficulty, int $sessionId): ?array
+  {
     if ($difficulty < 1 || $difficulty > 5) {
       throw new \RangeError("Dificultad debe estar entre 1 y 5");
     }
 
-    // Buscar pregunta existente y verificada
-    $q = $this->questions->getActiveByDifficulty($categoryId, $difficulty);
-
-    if ($q) {
-      return [
-        'id' => $q->id,
-        'statement' => $q->statement,
-        'difficulty' => $q->difficulty
-      ];
+    // SEGURIDAD: Validar que la sesión esté activa
+    $session = $this->sessions->get($sessionId);
+    if (!$session) {
+      throw new \RuntimeException('Sesión no existe');
     }
 
-    // Si no hay preguntas y no tenemos IA configurada, retornar null
-    if (!$this->generativeAi) {
+    // Si la sesión está terminada (game_over), no devolver más preguntas
+    if ($session->status === 'game_over') {
       return null;
     }
 
-    // Generar pregunta con IA
-    return $this->generateAndSaveQuestion($categoryId, $difficulty);
+    // Buscar pregunta existente y verificada excluyendo las ya respondidas
+    $q = $this->questions->getRandomByDifficultyExcludingAnswered($categoryId, $difficulty, $sessionId);
+
+    if ($q) {
+      // AGREGAR: Obtener las opciones
+      $options = $this->questions->getOptionsByQuestionId($q->id);
+
+      return [
+        'id' => $q->id,
+        'statement' => $q->statement,
+        'difficulty' => $q->difficulty,
+        'category_id' => $q->categoryId,
+        'options' => array_map(fn($opt) => [
+          'id' => (int)$opt['id'],
+          'text' => $opt['text'],
+          'is_correct' => (bool)$opt['is_correct']
+        ], $options)
+      ];
+    }
+
+    // CAMBIO: No generar preguntas en tiempo real durante el juego
+    // Solo el admin puede generar y debe verificarlas antes de que aparezcan
+    return null;
   }
 
   /**
@@ -71,7 +93,8 @@ final class GameService {
    * @param int $difficulty Nivel de dificultad
    * @return array|null Datos de la pregunta generada o null si falla
    */
-  public function generateAndSaveQuestion(int $categoryId, int $difficulty): ?array {
+  public function generateAndSaveQuestion(int $categoryId, int $difficulty): ?array
+  {
     try {
       // Obtener nombre de la categoría (asumiendo que existe, si no lanzará excepción)
       $categoryName = $this->getCategoryName($categoryId);
@@ -99,12 +122,21 @@ final class GameService {
         $generatedData['source_ref'] ?? null
       );
 
+      // Obtener las opciones recién guardadas de la BD
+      $savedOptions = $this->questions->getOptionsByQuestionId($questionId);
+
       return [
         'id' => $questionId,
         'statement' => $generatedData['statement'],
         'difficulty' => $difficulty,
+        'category_id' => $categoryId,
         'is_ai_generated' => true,
-        'admin_verified' => false
+        'admin_verified' => false,
+        'options' => array_map(fn($opt) => [
+          'id' => (int)$opt['id'],
+          'text' => $opt['text'],
+          'is_correct' => (bool)$opt['is_correct']
+        ], $savedOptions)
       ];
     } catch (\Throwable $e) {
       // Log del error (implementar según tu sistema de logging)
@@ -121,7 +153,8 @@ final class GameService {
    * @return string Nombre de la categoría
    * @throws \RuntimeException Si la categoría no existe
    */
-  private function getCategoryName(int $categoryId): string {
+  private function getCategoryName(int $categoryId): string
+  {
     // Esta es una implementación básica. Idealmente tendría un RepositoryInterface
     // para categories, pero por ahora usamos una query directa.
     $pdo = $this->questions->getPdo() ?? null;
@@ -147,12 +180,12 @@ final class GameService {
    * - Actualiza current_difficulty en BD
    * - Valida que sesión exista
    * - Incluye feedback educativo (explicación y opción correcta)
+   * - SEGURIDAD: Calcula is_correct en el servidor, no confía en el cliente
    */
   public function submitAnswer(
     int $sessionId,
     int $questionId,
     ?int $optionId,
-    bool $isCorrect,
     float $timeSec
   ): array {
     // Obtener sesión y dificultad ACTUAL de BD
@@ -161,8 +194,21 @@ final class GameService {
 
     $currentDiff = $session->currentDifficulty;
 
+    // SEGURIDAD: Calcular is_correct en el servidor comparando con BD
+    $correctOptionId = $this->questions->getCorrectOptionId($questionId);
+    $isCorrect = ($optionId !== null && $optionId === $correctOptionId);
+
     // Registrar respuesta con dificultad actual
-    $this->answers->register($sessionId, $questionId, $optionId, $isCorrect, $timeSec, $currentDiff);
+    try {
+      $this->answers->register($sessionId, $questionId, $optionId, $isCorrect, $timeSec, $currentDiff);
+    } catch (\PDOException $e) {
+      // Si es un error de clave duplicada, proporcionar mensaje más específico
+      if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate entry') !== false) {
+        throw new \RuntimeException("Esta pregunta ya fue respondida en esta sesión. Error de duplicación detectado.");
+      }
+      // Re-lanzar cualquier otro error de BD
+      throw $e;
+    }
 
     // Calcular cambios
     $delta = $this->ai->scoreDelta($isCorrect, $timeSec);
@@ -177,9 +223,9 @@ final class GameService {
 
     // Obtener feedback educativo
     $explanation = $this->questions->getExplanation($questionId);
-    $correctOptionId = $this->questions->getCorrectOptionId($questionId);
 
     return [
+      'is_correct' => $isCorrect,
       'score' => $score,
       'lives' => $lives,
       'status' => $status,

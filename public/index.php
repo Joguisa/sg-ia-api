@@ -76,9 +76,9 @@ $router->add('GET','/games/next', fn()=> $gameCtrl->next());
 $router->add('POST','/games/{id}/answer', fn($p)=> $gameCtrl->answer($p));
 
 // Questions (Public)
-$router->add('GET','/questions/{id}', fn($p)=> $questionCtrl->find($p));
+// $router->add('GET','/questions/{id}', fn($p)=> $questionCtrl->find($p));
 $router->add('GET','/admin/questions', fn()=> $questionCtrl->list(), fn()=> $authMiddleware->validate());
-$router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $questionCtrl->verify($p), fn()=> $authMiddleware->validate());
+// $router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $questionCtrl->verify($p), fn()=> $authMiddleware->validate());
 $router->add('DELETE','/admin/questions/{id}', fn($p)=> $questionCtrl->delete($p), fn()=> $authMiddleware->validate());
 
 // Stats (Public)
