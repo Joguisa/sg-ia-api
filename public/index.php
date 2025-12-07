@@ -8,8 +8,8 @@ use Src\Middleware\CorsMiddleware;
 use Src\Middleware\AuthMiddleware;
 use Dotenv\Dotenv;
 
-use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository};
-use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController,CategoryController};
+use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository,ErrorLogRepository};
+use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController,CategoryController,LogController};
 use Src\Services\{GameService,AIEngine,AuthService};
 use Src\Services\AI\GeminiAIService;
 
@@ -36,6 +36,7 @@ $sessionsRepo  = new SessionRepository($conn);
 $answersRepo   = new AnswerRepository($conn);
 $promptsRepo   = new SystemPromptRepository($conn);
 $categoriesRepo = new CategoryRepository($conn);
+$errorLogRepo  = new ErrorLogRepository($conn);
 $ai            = new AIEngine();
 
 $generativeAi = null;
@@ -51,6 +52,7 @@ $questionCtrl = new QuestionController($questionsRepo);
 $statsCtrl    = new StatisticsController($conn);
 $adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService);
 $categoryCtrl = new CategoryController($categoriesRepo);
+$logCtrl      = new LogController($errorLogRepo);
 $authService  = new AuthService($conn->pdo());
 $authCtrl     = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authService);
@@ -65,6 +67,9 @@ $router->add('GET','/', fn()=> \Src\Utils\Response::json([
 
 // Auth (Public)
 $router->add('POST','/auth/login', fn()=> $authCtrl->login());
+
+// Logging (Public - sin autenticación)
+$router->add('POST','/logs/error', fn()=> $logCtrl->logError());
 
 // Players (Public)
 $router->add('POST','/players', fn()=> $playerCtrl->create());

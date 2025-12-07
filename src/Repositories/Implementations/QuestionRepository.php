@@ -40,21 +40,6 @@ final class QuestionRepository implements QuestionRepositoryInterface
    */
   public function getRandomByDifficultyExcludingAnswered(int $categoryId, int $difficulty, int $sessionId): ?Question
   {
-    // 🔍 LOGGING DIAGNÓSTICO - Punto 2: Ver preguntas ya respondidas
-    error_log("=== DIAGNOSTICO QUESTION REPOSITORY ===");
-    error_log("Buscando pregunta para: CategoryID=$categoryId, Difficulty=$difficulty, SessionID=$sessionId");
-
-    // Primero, obtener las preguntas ya respondidas para esta sesión
-    $answeredQuery = "SELECT pa.question_id, pa.answered_at
-                      FROM player_answers pa
-                      WHERE pa.session_id = :session_id
-                      ORDER BY pa.answered_at DESC";
-    $stAnswered = $this->db->pdo()->prepare($answeredQuery);
-    $stAnswered->execute([':session_id' => $sessionId]);
-    $answeredQuestions = $stAnswered->fetchAll();
-    error_log("Preguntas ya respondidas en sesión $sessionId: " . json_encode(array_column($answeredQuestions, 'question_id')));
-    error_log("Total preguntas respondidas: " . count($answeredQuestions));
-
     // ESTRATEGIA DE FALLBACK: Buscar en múltiples dificultades
     // 1. Dificultad exacta
     // 2. Dificultad -1
@@ -68,8 +53,6 @@ final class QuestionRepository implements QuestionRepositoryInterface
     if ($difficulty < 5) {
       $difficulties[] = $difficulty + 1;
     }
-
-    error_log("Estrategia de búsqueda - Dificultades a intentar: " . json_encode($difficulties));
 
     $sql = "SELECT q.id, q.statement, q.difficulty, q.category_id, q.is_ai_generated, q.admin_verified
             FROM questions q
@@ -105,13 +88,6 @@ final class QuestionRepository implements QuestionRepositoryInterface
 
     $st->execute();
     $r = $st->fetch();
-
-    if ($r) {
-      error_log("✅ Pregunta seleccionada - ID: {$r['id']}, Difficulty: {$r['difficulty']} " .
-                ($r['difficulty'] != $difficulty ? "(FALLBACK desde dificultad $difficulty)" : "(EXACTA)"));
-    } else {
-      error_log("❌ No se encontró ninguna pregunta disponible ni en dificultades cercanas");
-    }
 
     return $r ? new Question(
       (int)$r['id'],
@@ -395,7 +371,6 @@ final class QuestionRepository implements QuestionRepositoryInterface
       $st = $this->db->pdo()->prepare($sql);
       return $st->execute([':id' => $id]);
     } catch (\Exception $e) {
-      error_log('Error deleting question: ' . $e->getMessage());
       return false;
     }
   }

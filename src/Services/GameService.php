@@ -35,14 +35,15 @@ final class GameService
   }
 
   /**
-   * Obtiene la siguiente pregunta para el jugador.
-   * Si no hay preguntas existentes para esa dificultad, genera una con IA.
+   * Obtiene la siguiente pregunta verificada para el jugador.
+   * Solo retorna preguntas que han sido verificadas por el administrador.
    * Excluye preguntas ya respondidas en la sesión actual.
+   * NO genera preguntas en tiempo real - el admin debe generarlas previamente.
    *
    * @param int $categoryId ID de la categoría
    * @param int $difficulty Dificultad requerida (1-5)
    * @param int $sessionId ID de la sesión actual
-   * @return array|null Array con datos de la pregunta o null si no se puede generar
+   * @return array|null Array con datos de la pregunta o null si no hay preguntas verificadas disponibles
    */
   public function nextQuestion(int $categoryId, int $difficulty, int $sessionId): ?array
   {

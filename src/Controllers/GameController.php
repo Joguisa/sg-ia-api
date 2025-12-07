@@ -43,14 +43,6 @@ final class GameController
       $difficultyFloat = (float)($_GET['difficulty'] ?? 1.0);
       $sessionId = (int)($_GET['session_id'] ?? 0);
 
-      // 🔍 LOGGING DIAGNÓSTICO - Punto 1: Parámetros recibidos
-      error_log("=== DIAGNOSTICO NEXT QUESTION ===");
-      error_log("GET completo: " . json_encode($_GET));
-      error_log("Category ID: $categoryId");
-      error_log("Difficulty (float): $difficultyFloat");
-      error_log("Session ID: $sessionId");
-      error_log("Timestamp: " . date('Y-m-d H:i:s'));
-
       // Redondear dificultad al entero más cercano para buscar preguntas
       $difficulty = (int)round($difficultyFloat);
 
@@ -64,17 +56,13 @@ final class GameController
 
       $q = $this->game->nextQuestion($categoryId, $difficulty, $sessionId);
       if (!$q) {
-        error_log("No hay preguntas disponibles para CategoryID=$categoryId, Difficulty=$difficulty, SessionID=$sessionId");
-        Response::json(['ok' => false, 'error' => 'No hay preguntas'], 404);
+        Response::json(['ok' => false, 'error' => 'No hay preguntas verificadas disponibles'], 404);
       } else {
-        error_log("Pregunta devuelta - ID: {$q['id']}, Statement: " . substr($q['statement'], 0, 50) . "...");
         Response::json(['ok' => true, 'question' => $q]);
       }
     } catch (\InvalidArgumentException $e) {
-      error_log("ERROR en next(): " . $e->getMessage());
       Response::json(['ok' => false, 'error' => $e->getMessage()], 400);
     } catch (\RangeError $e) {
-      error_log("ERROR en next(): " . $e->getMessage());
       Response::json(['ok' => false, 'error' => $e->getMessage()], 400);
     }
   }

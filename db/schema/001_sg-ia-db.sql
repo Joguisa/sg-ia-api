@@ -1,6 +1,6 @@
 -- =========================================================
 -- SG-IA DB: Script de Inicialización Unificado (Clean Install)
--- Versión: 2.0 (FK Cascade Fix)
+-- Versión: 2.1 (Error Logging)
 -- =========================================================
 
 DROP DATABASE IF EXISTS sg_ia_db;
@@ -150,6 +150,17 @@ CREATE TABLE admin_system_logs (
   details JSON NULL,
   logged_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY ix_asl_action_entity (action, entity_table, logged_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE error_logs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  message VARCHAR(255) NOT NULL,
+  status INT UNSIGNED NOT NULL,
+  status_text VARCHAR(100) NULL,
+  url VARCHAR(512) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY ix_error_logs_status_created (status, created_at),
+  KEY ix_error_logs_url_created (url, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
