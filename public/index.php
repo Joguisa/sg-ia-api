@@ -12,6 +12,10 @@ use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,Sessio
 use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController,CategoryController,LogController};
 use Src\Services\{GameService,AIEngine,AuthService};
 use Src\Services\AI\GeminiAIService;
+use Src\Services\AI\GroqAIService;
+use Src\Services\AI\DeepSeekAIService;
+use Src\Services\AI\FireworksAIService;
+use Src\Services\AI\MultiAIService;
 
 require_once __DIR__ . '/../vendor/autoload.php';
 header('Content-Type: application/json; charset=utf-8');
@@ -39,10 +43,36 @@ $categoriesRepo = new CategoryRepository($conn);
 $errorLogRepo  = new ErrorLogRepository($conn);
 $ai            = new AIEngine();
 
-$generativeAi = null;
-if (!empty($config['gemini']['api_key'] ?? null)) {
-  $generativeAi = new GeminiAIService($config['gemini']['api_key'], $promptsRepo);
-}
+// $generativeAi = null;
+// if (!empty($config['gemini']['api_key'] ?? null)) {
+//   $generativeAi = new GeminiAIService($config['gemini']['api_key'], $promptsRepo);
+// }
+
+// 1. CONFIGURAR PROVEEDORES DE IA
+$aiProvidersConfig = [
+  'gemini' => [
+      'api_key' => $_ENV['GEMINI_API_KEY'] ?? '',
+      'enabled' => filter_var($_ENV['GEMINI_ENABLED'] ?? true, FILTER_VALIDATE_BOOLEAN)
+  ],
+  'groq' => [
+      'api_key' => $_ENV['GROQ_API_KEY'] ?? '',
+      'enabled' => filter_var($_ENV['GROQ_ENABLED'] ?? true, FILTER_VALIDATE_BOOLEAN)
+  ],
+  'deepseek' => [
+      'api_key' => $_ENV['DEEPSEEK_API_KEY'] ?? '',
+      'enabled' => filter_var($_ENV['DEEPSEEK_ENABLED'] ?? true, FILTER_VALIDATE_BOOLEAN)
+  ],
+  'fireworks' => [
+      'api_key' => $_ENV['FIREWORKS_API_KEY'] ?? '',
+      'enabled' => filter_var($_ENV['FIREWORKS_ENABLED'] ?? true, FILTER_VALIDATE_BOOLEAN)
+  ]
+];
+
+// 2. CREAR SERVICIO MULTI-IA (fallover automático) ← NUEVO
+$generativeAi = new MultiAIService($aiProvidersConfig, $promptsRepo);
+
+// 3. LOG del proveedor activo (para debugging)
+error_log("Proveedor IA inicial: " . $generativeAi->getActiveProvider());
 
 $gameService = new GameService($sessionsRepo, $questionsRepo, $answersRepo, $playersRepo, $ai, $generativeAi);
 

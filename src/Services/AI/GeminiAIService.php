@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Src\Services\AI;
@@ -9,7 +10,8 @@ use Src\Repositories\Interfaces\SystemPromptRepositoryInterface;
 use Src\Services\SSL\CertificateManager;
 use Throwable;
 
-final class GeminiAIService implements GenerativeAIInterface {
+final class GeminiAIService implements GenerativeAIInterface
+{
   private Client $client;
   private string $apiKey;
   private string $apiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
@@ -22,7 +24,8 @@ final class GeminiAIService implements GenerativeAIInterface {
     $this->client = $this->createHttpClient();
   }
 
-  private function createHttpClient(): Client {
+  private function createHttpClient(): Client
+  {
     $config = [
       'timeout' => 30,
       'connect_timeout' => 10
@@ -48,7 +51,8 @@ final class GeminiAIService implements GenerativeAIInterface {
    * @return array Estructura: ['statement' => string, 'options' => array, 'correctOption' => int, 'explanation' => string]
    * @throws RuntimeException Si la API falla o retorna JSON inválido
    */
-  public function generateQuestion(string $topic, int $difficulty): array {
+  public function generateQuestion(string $topic, int $difficulty): array
+  {
     $prompt = $this->buildSystemPrompt($topic, $difficulty);
     $temperature = $this->getTemperature();
 
@@ -88,6 +92,18 @@ final class GeminiAIService implements GenerativeAIInterface {
       $geminiText = $body['candidates'][0]['content']['parts'][0]['text'];
       return $this->parseGeminiResponse($geminiText);
     } catch (GuzzleException $e) {
+      // Detectar específicamente el error de límite de uso (429 o RESOURCE_EXHAUSTED)
+      $statusCode = $e->getCode();
+      $message = $e->getMessage();
+
+      if (
+        $statusCode === 429 ||
+        strpos($message, 'RESOURCE_EXHAUSTED') !== false ||
+        strpos($message, 'quota') !== false ||
+        strpos($message, 'rate limit') !== false
+      ) {
+        throw new \RuntimeException('RATE_LIMIT_EXCEEDED: ' . $message);
+      }
       throw new \RuntimeException('Error en solicitud a Gemini API: ' . $e->getMessage());
     } catch (\Throwable $e) {
       throw new \RuntimeException('Error procesando respuesta de Gemini: ' . $e->getMessage());
@@ -102,13 +118,14 @@ final class GeminiAIService implements GenerativeAIInterface {
    * @return array Estructura: ['isCorrect' => bool, 'explanation' => string]
    * @throws RuntimeException Si la API falla
    */
-  public function validateAnswer(string $question, string $answer): array {
+  public function validateAnswer(string $question, string $answer): array
+  {
     $prompt = "Eres un experto oncólogo evaluando respuestas sobre Cáncer de Colon.
-Pregunta: $question
-Respuesta del estudiante: $answer
+              Pregunta: $question
+              Respuesta del estudiante: $answer
 
-Evalúa si la respuesta es correcta o incorrecta. Proporciona un JSON ESTRICTO sin markdown.
-Estructura: { 'isCorrect': bool, 'explanation': string (máx 200 caracteres) }";
+              Evalúa si la respuesta es correcta o incorrecta. Proporciona un JSON ESTRICTO sin markdown.
+              Estructura: { 'isCorrect': bool, 'explanation': string (máx 100 caracteres) }";
 
     try {
       $response = $this->client->post($this->apiEndpoint, [
@@ -137,7 +154,19 @@ Estructura: { 'isCorrect': bool, 'explanation': string (máx 200 caracteres) }";
       $geminiText = $body['candidates'][0]['content']['parts'][0]['text'];
       return $this->parseValidationResponse($geminiText);
     } catch (GuzzleException $e) {
-      throw new \RuntimeException('Error en solicitud de validación a Gemini API: ' . $e->getMessage());
+      // Detectar específicamente el error de límite de uso (429 o RESOURCE_EXHAUSTED)
+      $statusCode = $e->getCode();
+      $message = $e->getMessage();
+
+      if (
+        $statusCode === 429 ||
+        strpos($message, 'RESOURCE_EXHAUSTED') !== false ||
+        strpos($message, 'quota') !== false ||
+        strpos($message, 'rate limit') !== false
+      ) {
+        throw new \RuntimeException('RATE_LIMIT_EXCEEDED: ' . $message);
+      }
+      throw new \RuntimeException('Error en solicitud de validación a Gemini API: ' . $message);
     } catch (\Throwable $e) {
       throw new \RuntimeException('Error procesando validación de Gemini: ' . $e->getMessage());
     }
@@ -151,8 +180,9 @@ Estructura: { 'isCorrect': bool, 'explanation': string (máx 200 caracteres) }";
    * @param int $difficulty Nivel (1-5)
    * @return string Prompt formateado
    */
-  private function buildSystemPrompt(string $topic, int $difficulty): string {
-    $difficultyDesc = match($difficulty) {
+  private function buildSystemPrompt(string $topic, int $difficulty): string
+  {
+    $difficultyDesc = match ($difficulty) {
       1 => 'muy básico (conocimientos fundamentales)',
       2 => 'básico (conceptos clave)',
       3 => 'intermedio (aplicación clínica)',
@@ -175,7 +205,8 @@ Estructura: { 'isCorrect': bool, 'explanation': string (máx 200 caracteres) }";
    *
    * @return string Template del prompt
    */
-  private function getPromptTemplate(): string {
+  private function getPromptTemplate(): string
+  {
     if (!$this->prompts) {
       return $this->getDefaultPromptTemplate();
     }
@@ -193,7 +224,8 @@ Estructura: { 'isCorrect': bool, 'explanation': string (máx 200 caracteres) }";
    *
    * @return float Temperatura para llamada a API
    */
-  private function getTemperature(): float {
+  private function getTemperature(): float
+  {
     if (!$this->prompts) {
       return 0.7;
     }
@@ -211,26 +243,27 @@ Estructura: { 'isCorrect': bool, 'explanation': string (máx 200 caracteres) }";
    *
    * @return string Template del prompt
    */
-  private function getDefaultPromptTemplate(): string {
+  private function getDefaultPromptTemplate(): string
+  {
     return <<<'EOT'
-Eres un experto oncólogo y educador sanitario especializado en Cáncer de Colon.
-Genera EXACTAMENTE 1 pregunta de opción múltiple sobre {topic} para nivel de dificultad {difficulty} ({difficulty_desc}).
+    Eres un experto oncólogo y educador sanitario especializado en Cáncer de Colon.
+    Genera EXACTAMENTE 1 pregunta de opción múltiple sobre {topic} para nivel de dificultad {difficulty} ({difficulty_desc}).
 
-Contexto educativo: Alfabetización sobre Cáncer de Colon en Ecuador
-Estándares: Basado en Guías MSP Ecuador y OMS
+    Contexto educativo: Alfabetización sobre Cáncer de Colon en Ecuador
+    Estándares: Basado en Guías MSP Ecuador y OMS
 
-INSTRUCCIONES CRÍTICAS:
-1. Genera SOLO un JSON válido, sin markdown ni comentarios
-2. Estructura EXACTA: { "statement": "...", "options": [{"text": "...", "is_correct": bool}], "explanation": "...", "source_ref": "..." }
-3. Incluye exactamente 4 opciones
-4. Una sola opción debe ser correcta (is_correct: true)
-5. El enunciado debe ser claro y conciso (100-300 caracteres)
-6. Opciones balanceadas, ninguna obviamente incorrecta
-7. Explicación medida (150-250 caracteres)
-8. source_ref: referencia a "Guías MSP Ecuador", "OMS", o literatura médica
+    INSTRUCCIONES CRÍTICAS:
+    1. Genera SOLO un JSON válido, sin markdown ni comentarios
+    2. Estructura EXACTA: { "statement": "...", "options": [{"text": "...", "is_correct": bool}], "explanation": "...", "source_ref": "..." }
+    3. Incluye exactamente 4 opciones
+    4. Una sola opción debe ser correcta (is_correct: true)
+    5. El enunciado debe ser claro y conciso (100-300 caracteres)
+    6. Opciones balanceadas, ninguna obviamente incorrecta
+    7. Explicación medida (150-250 caracteres)
+    8. source_ref: referencia a "Guías MSP Ecuador", "OMS", o literatura médica
 
-JSON VÁLIDO ESTRICTO (sin markdown):
-EOT;
+    JSON VÁLIDO ESTRICTO (sin markdown):
+    EOT;
   }
 
   /**
@@ -240,7 +273,8 @@ EOT;
    * @return array Pregunta estructurada
    * @throws RuntimeException Si el JSON es inválido
    */
-  private function parseGeminiResponse(string $geminiText): array {
+  private function parseGeminiResponse(string $geminiText): array
+  {
     $json = null;
 
     if (preg_match('/```(?:json)?\s*\n(.*?)\n```/s', $geminiText, $matches)) {
@@ -299,7 +333,8 @@ EOT;
    * @return array ['isCorrect' => bool, 'explanation' => string]
    * @throws RuntimeException Si el JSON es inválido
    */
-  private function parseValidationResponse(string $geminiText): array {
+  private function parseValidationResponse(string $geminiText): array
+  {
     preg_match('/\{[\s\S]*\}/m', $geminiText, $matches);
 
     if (empty($matches)) {

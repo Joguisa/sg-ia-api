@@ -16,11 +16,29 @@ return [
   ],
   'cors' => [
     'origins' => ['http://localhost:4200'],
-    'methods' => ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
-    'headers' => ['Content-Type','Authorization']
+    'methods' => ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    'headers' => ['Content-Type', 'Authorization']
   ],
-  'gemini' => [
-    'api_key' => $_ENV['GEMINI_API_KEY'] ?? '',
-    'enabled' => (bool)($_ENV['GEMINI_ENABLED'] ?? false)
-  ]
+  // 'gemini' => [
+  //   'api_key' => $_ENV['GEMINI_API_KEY'] ?? '',
+  //   'enabled' => (bool)($_ENV['GEMINI_ENABLED'] ?? false)
+  // ]
+  'ai_providers' => [
+    'gemini' => [
+        'api_key' => $_ENV['GEMINI_API_KEY'] ?? '',
+        'enabled' => filter_var($_ENV['GEMINI_ENABLED'] ?? true, FILTER_VALIDATE_BOOLEAN)
+    ],
+    'groq' => [
+        'api_key' => $_ENV['GROQ_API_KEY'] ?? '',
+        'enabled' => filter_var($_ENV['GROQ_ENABLED'] ?? true, FILTER_VALIDATE_BOOLEAN)
+    ],
+    'deepseek' => [
+        'api_key' => $_ENV['DEEPSEEK_API_KEY'] ?? '',
+        'enabled' => filter_var($_ENV['DEEPSEEK_ENABLED'] ?? true, FILTER_VALIDATE_BOOLEAN)
+    ],
+    'fireworks' => [
+        'api_key' => $_ENV['FIREWORKS_API_KEY'] ?? '',
+        'enabled' => filter_var($_ENV['FIREWORKS_ENABLED'] ?? true, FILTER_VALIDATE_BOOLEAN)
+    ]
+]
 ];
