@@ -63,4 +63,19 @@ final class CategoryRepository implements CategoryRepositoryInterface {
 
     return (int)$this->db->pdo()->lastInsertId();
   }
+
+  /**
+   * Obtiene el ID de una categoría por su nombre
+   *
+   * @param string $categoryName Nombre de la categoría
+   * @return int|null ID de la categoría o null si no existe
+   */
+  public function getIdByName(string $categoryName): ?int
+  {
+    $sql = "SELECT id FROM question_categories WHERE name = :name LIMIT 1";
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute([':name' => trim($categoryName)]);
+    $result = $st->fetch();
+    return $result ? (int)$result['id'] : null;
+  }
 }

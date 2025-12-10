@@ -116,11 +116,19 @@ final class GameService
       // Guardar opciones
       $this->questions->saveOptions($questionId, $generatedData['options']);
 
-      // Guardar explicación
+      // Guardar ambas explicaciones
       $this->questions->saveExplanation(
         $questionId,
-        $generatedData['explanation'],
-        $generatedData['source_ref'] ?? null
+        $generatedData['explanation_correct'],
+        $generatedData['source_ref'] ?? null,
+        'correct'
+      );
+
+      $this->questions->saveExplanation(
+        $questionId,
+        $generatedData['explanation_incorrect'],
+        $generatedData['source_ref'] ?? null,
+        'incorrect'
       );
 
       // Obtener las opciones recién guardadas de la BD
@@ -222,8 +230,16 @@ final class GameService
 
     $this->sessions->updateProgress($sessionId, $score, $lives, $status, $nextDiff);
 
-    // Obtener feedback educativo
-    $explanation = $this->questions->getExplanation($questionId);
+    // Obtener feedback educativo según si respondió correctamente o no
+    $explanationType = $isCorrect ? 'correct' : 'incorrect';
+    $explanation = $this->questions->getExplanationByType($questionId, $explanationType);
+
+    // Fallback si no existe explicación del tipo solicitado
+    if (!$explanation) {
+      $explanation = $isCorrect
+        ? "¡Respuesta correcta! Has demostrado comprensión de este concepto."
+        : "Respuesta incorrecta. Revisa el concepto en la siguiente pregunta.";
+    }
 
     return [
       'is_correct' => $isCorrect,

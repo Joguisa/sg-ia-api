@@ -17,7 +17,14 @@ interface GenerativeAIInterface {
    *
    * @param string $topic Tema o categoría de la pregunta
    * @param int $difficulty Nivel de dificultad (1-5)
-   * @return array Estructura: ['statement' => string, 'options' => array, 'correctOption' => int]
+   * @return array Estructura: [
+   *   'statement' => string,
+   *   'options' => array,
+   *   'correctOption' => int,
+   *   'explanation_correct' => string,   // Explicación para respuesta correcta
+   *   'explanation_incorrect' => string, // Explicación para respuesta incorrecta
+   *   'source_ref' => string
+   * ]
    */
   public function generateQuestion(string $topic, int $difficulty): array;
 

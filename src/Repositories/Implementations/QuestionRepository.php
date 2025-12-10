@@ -247,36 +247,63 @@ final class QuestionRepository implements QuestionRepositoryInterface
    * @param int $questionId ID de la pregunta
    * @param string $text Texto de la explicación
    * @param string|null $sourceRef Referencia a la fuente (opcional)
+   * @param string $explanationType Tipo de explicación: 'correct' o 'incorrect'
    * @return void
    */
-  public function saveExplanation(int $questionId, string $text, ?string $sourceRef = null): void
+  public function saveExplanation(int $questionId, string $text, ?string $sourceRef = null, string $explanationType = 'correct'): void
   {
     if (empty(trim($text))) {
       throw new \InvalidArgumentException("El texto de la explicación no puede estar vacío");
     }
 
-    $sql = "INSERT INTO question_explanations (question_id, text, source_ref)
-            VALUES (:question_id, :text, :source_ref)";
+    if (!in_array($explanationType, ['correct', 'incorrect'])) {
+      throw new \InvalidArgumentException("El tipo de explicación debe ser 'correct' o 'incorrect'");
+    }
+
+    $sql = "INSERT INTO question_explanations (question_id, text, source_ref, explanation_type)
+            VALUES (:question_id, :text, :source_ref, :explanation_type)";
     $st = $this->db->pdo()->prepare($sql);
 
     $st->execute([
       ':question_id' => $questionId,
       ':text' => trim($text),
-      ':source_ref' => $sourceRef
+      ':source_ref' => $sourceRef,
+      ':explanation_type' => $explanationType
     ]);
   }
 
   /**
-   * Obtiene la explicación de una pregunta
+   * Obtiene la explicación de una pregunta (por compatibilidad, devuelve la explicación 'correct')
    *
    * @param int $questionId ID de la pregunta
    * @return string|null Texto de la explicación o null si no existe
    */
   public function getExplanation(int $questionId): ?string
   {
-    $sql = "SELECT text FROM question_explanations WHERE question_id = :question_id LIMIT 1";
+    return $this->getExplanationByType($questionId, 'correct');
+  }
+
+  /**
+   * Obtiene la explicación de una pregunta por tipo
+   *
+   * @param int $questionId ID de la pregunta
+   * @param string $explanationType Tipo: 'correct' o 'incorrect'
+   * @return string|null Texto de la explicación o null si no existe
+   */
+  public function getExplanationByType(int $questionId, string $explanationType): ?string
+  {
+    if (!in_array($explanationType, ['correct', 'incorrect'])) {
+      throw new \InvalidArgumentException("El tipo de explicación debe ser 'correct' o 'incorrect'");
+    }
+
+    $sql = "SELECT text FROM question_explanations
+            WHERE question_id = :question_id AND explanation_type = :explanation_type
+            LIMIT 1";
     $st = $this->db->pdo()->prepare($sql);
-    $st->execute([':question_id' => $questionId]);
+    $st->execute([
+      ':question_id' => $questionId,
+      ':explanation_type' => $explanationType
+    ]);
     $result = $st->fetch();
     return $result ? $result['text'] : null;
   }
@@ -383,11 +410,313 @@ final class QuestionRepository implements QuestionRepositoryInterface
    */
   public function getOptionsByQuestionId(int $questionId): array
   {
-    $sql = "SELECT id, content AS text, is_correct FROM question_options 
-            WHERE question_id = :question_id 
+    $sql = "SELECT id, content AS text, is_correct FROM question_options
+            WHERE question_id = :question_id
             ORDER BY id ASC";
     $st = $this->db->pdo()->prepare($sql);
     $st->execute([':question_id' => $questionId]);
     return $st->fetchAll() ?: [];
+  }
+
+  /**
+   * Obtiene preguntas no verificadas con información de batch y explicaciones
+   *
+   * @param int|null $batchId ID del batch (opcional, filtra por batch si se proporciona)
+   * @return array Array de preguntas con estado de explicaciones y opciones
+   */
+  public function getUnverifiedQuestions(?int $batchId = null): array
+  {
+    $sql = "SELECT
+              q.id,
+              q.statement,
+              q.category_id,
+              qc.name as category,
+              q.difficulty,
+              qb.batch_name,
+              qb.batch_type,
+              q.is_ai_generated,
+              (SELECT COUNT(*) FROM question_explanations WHERE question_id = q.id AND explanation_type = 'correct') as has_correct,
+              (SELECT COUNT(*) FROM question_explanations WHERE question_id = q.id AND explanation_type = 'incorrect') as has_incorrect,
+              (SELECT COUNT(*) FROM question_options WHERE question_id = q.id) as option_count
+            FROM questions q
+            LEFT JOIN question_batches qb ON q.batch_id = qb.id
+            LEFT JOIN question_categories qc ON q.category_id = qc.id
+            WHERE q.admin_verified = 0";
+
+    if ($batchId !== null) {
+      $sql .= " AND q.batch_id = :batch_id";
+    }
+
+    $sql .= " ORDER BY qb.imported_at DESC, q.created_at DESC";
+
+    $st = $this->db->pdo()->prepare($sql);
+
+    if ($batchId !== null) {
+      $st->execute([':batch_id' => $batchId]);
+    } else {
+      $st->execute();
+    }
+
+    return $st->fetchAll() ?: [];
+  }
+
+  /**
+   * Obtiene todas las preguntas de un batch
+   *
+   * @param int $batchId ID del batch
+   * @return array Array de preguntas
+   */
+  public function getByBatchId(int $batchId): array
+  {
+    $sql = "SELECT * FROM questions WHERE batch_id = :batch_id ORDER BY id";
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute([':batch_id' => $batchId]);
+    return $st->fetchAll() ?: [];
+  }
+
+  /**
+   * Actualiza el estado de verificación de una pregunta
+   *
+   * @param int $questionId ID de la pregunta
+   * @param bool $verified Estado de verificación
+   * @return bool true si la actualización fue exitosa
+   */
+  public function updateVerificationStatus(int $questionId, bool $verified): bool
+  {
+    $sql = "UPDATE questions SET admin_verified = :verified WHERE id = :question_id";
+    $st = $this->db->pdo()->prepare($sql);
+    return $st->execute([
+      ':verified' => $verified ? 1 : 0,
+      ':question_id' => $questionId
+    ]);
+  }
+
+  /**
+   * Cuenta preguntas no verificadas de un batch
+   *
+   * @param int $batchId ID del batch
+   * @return int Cantidad de preguntas no verificadas
+   */
+  public function countUnverifiedByBatch(int $batchId): int
+  {
+    $sql = "SELECT COUNT(*) as count FROM questions WHERE batch_id = :batch_id AND admin_verified = 0";
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute([':batch_id' => $batchId]);
+    $result = $st->fetch();
+    return $result ? (int)$result['count'] : 0;
+  }
+
+  /**
+   * Actualiza una pregunta completa incluyendo opciones y explicaciones
+   *
+   * @param int $questionId ID de la pregunta
+   * @param array $data Datos de actualización:
+   *   - statement: string (enunciado)
+   *   - difficulty: int (1-5)
+   *   - category_id: int
+   *   - options: array de opciones [{text, is_correct}, ...]
+   *   - explanation_correct: string (opcional)
+   *   - explanation_incorrect: string (opcional)
+   * @return bool true si la actualización fue exitosa
+   */
+  public function updateFull(int $questionId, array $data): bool
+  {
+    $pdo = $this->db->pdo();
+
+    try {
+      $pdo->beginTransaction();
+
+      // 1. Actualizar pregunta principal
+      $sqlQuestion = "UPDATE questions SET
+                        statement = :statement,
+                        difficulty = :difficulty,
+                        category_id = :category_id,
+                        admin_verified = 0,
+                        updated_at = CURRENT_TIMESTAMP
+                      WHERE id = :id";
+      $stQuestion = $pdo->prepare($sqlQuestion);
+      $stQuestion->execute([
+        ':id' => $questionId,
+        ':statement' => $data['statement'],
+        ':difficulty' => (int)$data['difficulty'],
+        ':category_id' => (int)$data['category_id']
+      ]);
+
+      // 2. Actualizar opciones si se proporcionan
+      if (isset($data['options']) && is_array($data['options'])) {
+        // Eliminar opciones existentes
+        $sqlDeleteOptions = "DELETE FROM question_options WHERE question_id = :question_id";
+        $stDeleteOptions = $pdo->prepare($sqlDeleteOptions);
+        $stDeleteOptions->execute([':question_id' => $questionId]);
+
+        // Insertar nuevas opciones
+        $sqlInsertOption = "INSERT INTO question_options (question_id, content, is_correct)
+                            VALUES (:question_id, :content, :is_correct)";
+        $stInsertOption = $pdo->prepare($sqlInsertOption);
+
+        foreach ($data['options'] as $option) {
+          $stInsertOption->execute([
+            ':question_id' => $questionId,
+            ':content' => trim($option['text']),
+            ':is_correct' => $option['is_correct'] ? 1 : 0
+          ]);
+        }
+      }
+
+      // 3. Actualizar explicación correcta si se proporciona
+      if (isset($data['explanation_correct']) && !empty(trim($data['explanation_correct']))) {
+        // Verificar si existe
+        $sqlCheckCorrect = "SELECT id FROM question_explanations
+                            WHERE question_id = :question_id AND explanation_type = 'correct'";
+        $stCheckCorrect = $pdo->prepare($sqlCheckCorrect);
+        $stCheckCorrect->execute([':question_id' => $questionId]);
+        $existingCorrect = $stCheckCorrect->fetch();
+
+        if ($existingCorrect) {
+          $sqlUpdateCorrect = "UPDATE question_explanations SET text = :text
+                               WHERE question_id = :question_id AND explanation_type = 'correct'";
+          $stUpdateCorrect = $pdo->prepare($sqlUpdateCorrect);
+          $stUpdateCorrect->execute([
+            ':question_id' => $questionId,
+            ':text' => trim($data['explanation_correct'])
+          ]);
+        } else {
+          $sqlInsertCorrect = "INSERT INTO question_explanations (question_id, text, explanation_type)
+                               VALUES (:question_id, :text, 'correct')";
+          $stInsertCorrect = $pdo->prepare($sqlInsertCorrect);
+          $stInsertCorrect->execute([
+            ':question_id' => $questionId,
+            ':text' => trim($data['explanation_correct'])
+          ]);
+        }
+      }
+
+      // 4. Actualizar explicación incorrecta si se proporciona
+      if (isset($data['explanation_incorrect']) && !empty(trim($data['explanation_incorrect']))) {
+        $sqlCheckIncorrect = "SELECT id FROM question_explanations
+                              WHERE question_id = :question_id AND explanation_type = 'incorrect'";
+        $stCheckIncorrect = $pdo->prepare($sqlCheckIncorrect);
+        $stCheckIncorrect->execute([':question_id' => $questionId]);
+        $existingIncorrect = $stCheckIncorrect->fetch();
+
+        if ($existingIncorrect) {
+          $sqlUpdateIncorrect = "UPDATE question_explanations SET text = :text
+                                 WHERE question_id = :question_id AND explanation_type = 'incorrect'";
+          $stUpdateIncorrect = $pdo->prepare($sqlUpdateIncorrect);
+          $stUpdateIncorrect->execute([
+            ':question_id' => $questionId,
+            ':text' => trim($data['explanation_incorrect'])
+          ]);
+        } else {
+          $sqlInsertIncorrect = "INSERT INTO question_explanations (question_id, text, explanation_type)
+                                 VALUES (:question_id, :text, 'incorrect')";
+          $stInsertIncorrect = $pdo->prepare($sqlInsertIncorrect);
+          $stInsertIncorrect->execute([
+            ':question_id' => $questionId,
+            ':text' => trim($data['explanation_incorrect'])
+          ]);
+        }
+      }
+
+      $pdo->commit();
+      return true;
+    } catch (\Exception $e) {
+      $pdo->rollBack();
+      error_log("Error updating question full: " . $e->getMessage());
+      return false;
+    }
+  }
+
+  /**
+   * Obtiene una pregunta completa con opciones y explicaciones
+   *
+   * @param int $questionId ID de la pregunta
+   * @return array|null Datos completos de la pregunta o null si no existe
+   */
+  public function getFullQuestion(int $questionId): ?array
+  {
+    $pdo = $this->db->pdo();
+
+    // Obtener pregunta
+    $sqlQuestion = "SELECT q.id, q.statement, q.difficulty, q.category_id, qc.name as category_name,
+                           q.is_ai_generated, q.admin_verified, q.batch_id
+                    FROM questions q
+                    LEFT JOIN question_categories qc ON q.category_id = qc.id
+                    WHERE q.id = :id";
+    $stQuestion = $pdo->prepare($sqlQuestion);
+    $stQuestion->execute([':id' => $questionId]);
+    $question = $stQuestion->fetch(\PDO::FETCH_ASSOC);
+
+    if (!$question) {
+      return null;
+    }
+
+    // Obtener opciones
+    $sqlOptions = "SELECT id, content as text, is_correct FROM question_options
+                   WHERE question_id = :question_id ORDER BY id";
+    $stOptions = $pdo->prepare($sqlOptions);
+    $stOptions->execute([':question_id' => $questionId]);
+    $options = $stOptions->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+
+    // Obtener explicaciones
+    $sqlExplanations = "SELECT id, text, explanation_type FROM question_explanations
+                        WHERE question_id = :question_id";
+    $stExplanations = $pdo->prepare($sqlExplanations);
+    $stExplanations->execute([':question_id' => $questionId]);
+    $explanations = $stExplanations->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+
+    return [
+      'id' => (int)$question['id'],
+      'statement' => $question['statement'],
+      'difficulty' => (int)$question['difficulty'],
+      'category_id' => (int)$question['category_id'],
+      'category_name' => $question['category_name'],
+      'is_ai_generated' => (bool)$question['is_ai_generated'],
+      'admin_verified' => (bool)$question['admin_verified'],
+      'batch_id' => $question['batch_id'] ? (int)$question['batch_id'] : null,
+      'options' => array_map(fn($o) => [
+        'id' => (int)$o['id'],
+        'text' => $o['text'],
+        'is_correct' => (bool)$o['is_correct']
+      ], $options),
+      'explanations' => array_map(fn($e) => [
+        'id' => (int)$e['id'],
+        'text' => $e['text'],
+        'type' => $e['explanation_type']
+      ], $explanations)
+    ];
+  }
+
+  /**
+   * Crea una pregunta asociada a un batch
+   *
+   * @param array $questionData Datos de la pregunta
+   * @param int $batchId ID del batch
+   * @return int|false ID de la pregunta creada o false en caso de error
+   */
+  public function createWithBatch(array $questionData, int $batchId): int|false
+  {
+    try {
+      $sql = "INSERT INTO questions (statement, difficulty, category_id, source_id, batch_id, is_ai_generated, admin_verified, is_active)
+              VALUES (:statement, :difficulty, :category_id, :source_id, :batch_id, 0, 0, 1)";
+
+      $st = $this->db->pdo()->prepare($sql);
+      $success = $st->execute([
+        ':statement' => $questionData['statement'],
+        ':difficulty' => (int)$questionData['difficulty'],
+        ':category_id' => (int)$questionData['category_id'],
+        ':source_id' => $questionData['source_id'] ?? null,
+        ':batch_id' => $batchId
+      ]);
+
+      if ($success) {
+        return (int)$this->db->pdo()->lastInsertId();
+      }
+
+      return false;
+    } catch (\Exception $e) {
+      error_log("Error creating question with batch: " . $e->getMessage());
+      return false;
+    }
   }
 }

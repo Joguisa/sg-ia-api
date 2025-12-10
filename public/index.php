@@ -8,7 +8,7 @@ use Src\Middleware\CorsMiddleware;
 use Src\Middleware\AuthMiddleware;
 use Dotenv\Dotenv;
 
-use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository,ErrorLogRepository};
+use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository,ErrorLogRepository,QuestionBatchRepository};
 use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController,CategoryController,LogController};
 use Src\Services\{GameService,AIEngine,AuthService};
 use Src\Services\AI\GeminiAIService;
@@ -41,6 +41,7 @@ $answersRepo   = new AnswerRepository($conn);
 $promptsRepo   = new SystemPromptRepository($conn);
 $categoriesRepo = new CategoryRepository($conn);
 $errorLogRepo  = new ErrorLogRepository($conn);
+$batchRepo     = new QuestionBatchRepository($conn);
 $ai            = new AIEngine();
 
 // $generativeAi = null;
@@ -80,7 +81,7 @@ $playerCtrl   = new PlayerController($playersRepo);
 $gameCtrl     = new GameController($gameService);
 $questionCtrl = new QuestionController($questionsRepo);
 $statsCtrl    = new StatisticsController($conn);
-$adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService);
+$adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService, $batchRepo, $categoriesRepo);
 $categoryCtrl = new CategoryController($categoriesRepo);
 $logCtrl      = new LogController($errorLogRepo);
 $authService  = new AuthService($conn->pdo());
@@ -124,6 +125,8 @@ $router->add('GET','/stats/leaderboard', fn()=> $statsCtrl->leaderboard());
 
 // Question Management
 $router->add('PUT','/admin/questions/{id}', fn($p)=> $adminCtrl->updateQuestion($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/questions/{id}/full', fn($p)=> $adminCtrl->getQuestionFull($p), fn()=> $authMiddleware->validate());
+$router->add('PUT','/admin/questions/{id}/full', fn($p)=> $adminCtrl->updateQuestionFull($p), fn()=> $authMiddleware->validate());
 $router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $adminCtrl->verifyQuestion($p), fn()=> $authMiddleware->validate());
 
 // Prompt Configuration
@@ -140,6 +143,13 @@ $router->add('POST','/admin/generate-batch', fn()=> $adminCtrl->generateBatch(),
 
 // Dashboard Analytics
 $router->add('GET','/admin/dashboard', fn()=> $adminCtrl->dashboardStats(), fn()=> $authMiddleware->validate());
+
+// Batch Management & Verification
+$router->add('POST','/admin/batch/{batchId}/verify', fn($p)=> $adminCtrl->verifyBatch($p), fn()=> $authMiddleware->validate());
+$router->add('POST','/admin/batch/import-csv', fn()=> $adminCtrl->importCSV(), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/unverified', fn()=> $adminCtrl->getUnverifiedQuestions(), fn()=> $authMiddleware->validate());
+$router->add('PUT','/admin/explanation/{explanationId}', fn($p)=> $adminCtrl->editExplanation($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/batch-statistics', fn()=> $adminCtrl->getBatchStatistics(), fn()=> $authMiddleware->validate());
 
 // Dispatch
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';

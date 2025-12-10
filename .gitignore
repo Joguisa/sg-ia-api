@@ -20,3 +20,6 @@ Thumbs.db
 # Dump locales
 /db/dumps/*
 !/db/dumps/README.md
+
+# Claude
+.claude/

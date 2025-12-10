@@ -55,7 +55,7 @@ final class FireworksAIService implements GenerativeAIInterface
         try {
             $response = $this->client->post($this->apiEndpoint, [
                 'json' => [
-                    'model' => 'accounts/fireworks/models/llama-v3-70b-instruct', // Modelo Fireworks
+                    'model' => 'accounts/fireworks/models/llama-v3-70b-instruct',
                     'messages' => [
                         [
                             'role' => 'system',
@@ -98,7 +98,7 @@ final class FireworksAIService implements GenerativeAIInterface
         try {
             $response = $this->client->post($this->apiEndpoint, [
                 'json' => [
-                    'model' => 'deepseek-chat',
+                    'model' => 'accounts/fireworks/models/llama-v3-70b-instruct',
                     'messages' => [
                         [
                             'role' => 'user',
@@ -114,16 +114,16 @@ final class FireworksAIService implements GenerativeAIInterface
             $body = json_decode($response->getBody()->getContents(), true);
 
             if (!isset($body['choices'][0]['message']['content'])) {
-                throw new \RuntimeException('Respuesta inesperada de DeepSeek API');
+                throw new \RuntimeException('Respuesta inesperada de Fireworks API');
             }
 
-            $deepseekText = $body['choices'][0]['message']['content'];
-            return $this->parseValidationResponse($deepseekText);
+            $fireworksText = $body['choices'][0]['message']['content'];
+            return $this->parseValidationResponse($fireworksText);
         } catch (GuzzleException $e) {
             if ($this->isRateLimitError($e)) {
                 throw new \RuntimeException('RATE_LIMIT_EXCEEDED: ' . $e->getMessage());
             }
-            throw new \RuntimeException('Error en validación con DeepSeek API: ' . $e->getMessage());
+            throw new \RuntimeException('Error en validación con Fireworks API: ' . $e->getMessage());
         }
     }
 
@@ -192,12 +192,14 @@ final class FireworksAIService implements GenerativeAIInterface
 
         INSTRUCCIONES CRÍTICAS:
         1. Genera SOLO un JSON válido, sin markdown ni comentarios
-        2. Estructura EXACTA: { "statement": "...", "options": [{"text": "...", "is_correct": bool}], "explanation": "...", "source_ref": "..." }
+        2. Estructura EXACTA: { "statement": "...", "options": [{"text": "...", "is_correct": bool}], "explanation_correct": "...", "explanation_incorrect": "...", "source_ref": "..." }
         3. Incluye exactamente 4 opciones
         4. Una sola opción debe ser correcta (is_correct: true)
         5. El enunciado debe ser claro y conciso (100-300 caracteres)
         6. Opciones balanceadas, ninguna obviamente incorrecta
-        7. Explicación medida (150-250 caracteres)
+        7. Genera DOS explicaciones diferentes:
+           - explanation_correct: Retroalimentación positiva y refuerzo del concepto cuando el estudiante responde correctamente (50-100 palabras)
+           - explanation_incorrect: Explicación educativa general sobre por qué la respuesta correcta es la adecuada, útil para quien se equivocó (50-100 palabras)
         8. source_ref: referencia a "Guías MSP Ecuador", "OMS", o literatura médica
 
         JSON VÁLIDO ESTRICTO (sin markdown):
@@ -229,7 +231,7 @@ final class FireworksAIService implements GenerativeAIInterface
         }
 
         if (!$json || !isset($json['statement']) || !isset($json['options'])) {
-            throw new \RuntimeException('JSON de DeepSeek tiene estructura inválida');
+            throw new \RuntimeException('JSON de Fireworks tiene estructura inválida');
         }
 
         if (!is_string($json['statement']) || empty($json['statement'])) {
@@ -261,8 +263,9 @@ final class FireworksAIService implements GenerativeAIInterface
             'statement' => trim($json['statement']),
             'options' => $json['options'],
             'correctOption' => $correctIndex,
-            'explanation' => $json['explanation'] ?? 'Sin explicación',
-            'source_ref' => $json['source_ref'] ?? 'DeepSeek AI'
+            'explanation_correct' => trim($json['explanation_correct'] ?? 'Sin explicación'),
+            'explanation_incorrect' => trim($json['explanation_incorrect'] ?? 'Sin explicación'),
+            'source_ref' => $json['source_ref'] ?? 'Fireworks AI'
         ];
     }
 

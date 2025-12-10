@@ -7,13 +7,17 @@ use Src\Services\ValidationService;
 use Src\Services\GameService;
 use Src\Repositories\Interfaces\QuestionRepositoryInterface;
 use Src\Repositories\Interfaces\SystemPromptRepositoryInterface;
+use Src\Repositories\Interfaces\QuestionBatchRepositoryInterface;
+use Src\Repositories\Interfaces\CategoryRepositoryInterface;
 use Src\Utils\Response;
 
 final class AdminController {
   public function __construct(
     private QuestionRepositoryInterface $questions,
     private ?SystemPromptRepositoryInterface $prompts = null,
-    private ?GameService $gameService = null
+    private ?GameService $gameService = null,
+    private ?QuestionBatchRepositoryInterface $batchRepo = null,
+    private ?CategoryRepositoryInterface $categoryRepo = null
   ) {}
 
   /**
@@ -78,6 +82,160 @@ final class AdminController {
       ], 200);
     } catch (\Exception $e) {
       Response::json(['ok'=>false,'error'=>'Failed to update question: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Obtiene una pregunta completa con opciones y explicaciones
+   *
+   * Endpoint: GET /admin/questions/{id}/full
+   *
+   * @param array $params Parámetros de la ruta (contiene 'id')
+   * @return void
+   */
+  public function getQuestionFull(array $params): void {
+    $questionId = (int)($params['id'] ?? 0);
+
+    if ($questionId <= 0) {
+      Response::json(['ok' => false, 'error' => 'Invalid question ID'], 400);
+      return;
+    }
+
+    try {
+      $question = $this->questions->getFullQuestion($questionId);
+
+      if (!$question) {
+        Response::json(['ok' => false, 'error' => 'Question not found'], 404);
+        return;
+      }
+
+      Response::json([
+        'ok' => true,
+        'question' => $question
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok' => false, 'error' => 'Failed to get question: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Actualiza una pregunta completa (enunciado, opciones, explicaciones)
+   *
+   * Endpoint: PUT /admin/questions/{id}/full
+   * Body: {
+   *   "statement": "Nuevo enunciado",
+   *   "difficulty": 1-5,
+   *   "category_id": int,
+   *   "options": [
+   *     {"text": "Opción A", "is_correct": false},
+   *     {"text": "Opción B", "is_correct": true},
+   *     {"text": "Opción C", "is_correct": false},
+   *     {"text": "Opción D", "is_correct": false}
+   *   ],
+   *   "explanation_correct": "Explicación cuando acierta",
+   *   "explanation_incorrect": "Explicación cuando falla"
+   * }
+   *
+   * @param array $params Parámetros de la ruta (contiene 'id')
+   * @return void
+   */
+  public function updateQuestionFull(array $params): void {
+    $questionId = (int)($params['id'] ?? 0);
+
+    if ($questionId <= 0) {
+      Response::json(['ok' => false, 'error' => 'Invalid question ID'], 400);
+      return;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+
+    // Validar campos requeridos
+    ValidationService::requireFields($data, ['statement', 'difficulty', 'category_id', 'options']);
+
+    // Validar enunciado
+    $statement = trim($data['statement']);
+    if (empty($statement) || strlen($statement) < 10) {
+      Response::json(['ok' => false, 'error' => 'Statement must be at least 10 characters'], 400);
+      return;
+    }
+
+    if (strlen($statement) > 1000) {
+      Response::json(['ok' => false, 'error' => 'Statement cannot exceed 1000 characters'], 400);
+      return;
+    }
+
+    // Validar dificultad
+    $difficulty = (int)$data['difficulty'];
+    if ($difficulty < 1 || $difficulty > 5) {
+      Response::json(['ok' => false, 'error' => 'Difficulty must be between 1 and 5'], 400);
+      return;
+    }
+
+    // Validar opciones
+    $options = $data['options'];
+    if (!is_array($options) || count($options) < 2 || count($options) > 6) {
+      Response::json(['ok' => false, 'error' => 'Must have between 2 and 6 options'], 400);
+      return;
+    }
+
+    $correctCount = 0;
+    foreach ($options as $opt) {
+      if (!isset($opt['text']) || empty(trim($opt['text']))) {
+        Response::json(['ok' => false, 'error' => 'All options must have text'], 400);
+        return;
+      }
+      if (isset($opt['is_correct']) && $opt['is_correct']) {
+        $correctCount++;
+      }
+    }
+
+    if ($correctCount !== 1) {
+      Response::json(['ok' => false, 'error' => 'Must have exactly one correct option'], 400);
+      return;
+    }
+
+    try {
+      // Verificar que la pregunta existe
+      $existingQuestion = $this->questions->find($questionId);
+      if (!$existingQuestion) {
+        Response::json(['ok' => false, 'error' => 'Question not found'], 404);
+        return;
+      }
+
+      // Preparar datos para actualización
+      $updateData = [
+        'statement' => $statement,
+        'difficulty' => $difficulty,
+        'category_id' => (int)$data['category_id'],
+        'options' => $options
+      ];
+
+      // Agregar explicaciones si se proporcionan
+      if (isset($data['explanation_correct'])) {
+        $updateData['explanation_correct'] = $data['explanation_correct'];
+      }
+      if (isset($data['explanation_incorrect'])) {
+        $updateData['explanation_incorrect'] = $data['explanation_incorrect'];
+      }
+
+      // Ejecutar actualización
+      $success = $this->questions->updateFull($questionId, $updateData);
+
+      if (!$success) {
+        Response::json(['ok' => false, 'error' => 'Failed to update question'], 500);
+        return;
+      }
+
+      // Obtener pregunta actualizada
+      $updatedQuestion = $this->questions->getFullQuestion($questionId);
+
+      Response::json([
+        'ok' => true,
+        'message' => 'Question updated successfully. Verification reset to pending.',
+        'question' => $updatedQuestion
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok' => false, 'error' => 'Failed to update question: ' . $e->getMessage()], 500);
     }
   }
 
@@ -551,6 +709,371 @@ final class AdminController {
       }
     } catch (\Exception $e) {
       Response::json(['ok'=>false,'error'=>'Error deleting question: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Verifica todas las preguntas de un batch (cambia admin_verified a true)
+   *
+   * Endpoint: POST /admin/batch/{batchId}/verify
+   *
+   * @param array $params Parámetros de la ruta (contiene 'batchId')
+   * @return void
+   */
+  public function verifyBatch(array $params): void
+  {
+    $batchId = (int)($params['batchId'] ?? 0);
+
+    if ($batchId <= 0) {
+      Response::json(['ok' => false, 'error' => 'ID de batch inválido'], 400);
+      return;
+    }
+
+    try {
+      // Obtener todas las preguntas del batch
+      $questions = $this->questions->getByBatchId($batchId);
+
+      if (empty($questions)) {
+        Response::json(['ok' => false, 'error' => 'Batch no encontrado'], 404);
+        return;
+      }
+
+      // Verificar cada pregunta
+      foreach ($questions as $question) {
+        $this->questions->updateVerificationStatus((int)$question['id'], true);
+      }
+
+      // Actualizar contador de verificadas en el batch
+      if ($this->batchRepo) {
+        $this->batchRepo->updateVerificationCount($batchId);
+        $this->batchRepo->updateStatus($batchId, 'complete');
+      }
+
+      // Registrar en admin_system_logs
+      $pdo = $this->questions->getPdo();
+      if ($pdo) {
+        $logSQL = "INSERT INTO admin_system_logs (action, entity_table, entity_id, details, logged_at)
+                   VALUES (:action, :entity_table, :entity_id, :details, NOW())";
+        $logSt = $pdo->prepare($logSQL);
+        $logSt->execute([
+          ':action' => 'batch_verified',
+          ':entity_table' => 'question_batches',
+          ':entity_id' => $batchId,
+          ':details' => json_encode(['verified_count' => count($questions)])
+        ]);
+      }
+
+      Response::json([
+        'ok' => true,
+        'message' => count($questions) . ' preguntas verificadas',
+        'verified_count' => count($questions),
+        'batch_id' => $batchId
+      ]);
+    } catch (\Exception $e) {
+      error_log("Error verifying batch: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => 'Error al verificar batch: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Importa preguntas desde archivo CSV
+   *
+   * Endpoint: POST /admin/batch/import-csv
+   *
+   * @return void
+   */
+  public function importCSV(): void
+  {
+    // Validar archivo
+    if (!isset($_FILES['csv_file'])) {
+      Response::json(['ok' => false, 'error' => 'No se proporcionó archivo CSV'], 400);
+      return;
+    }
+
+    $file = $_FILES['csv_file'];
+    $mimeTypes = ['text/csv', 'application/vnd.ms-excel', 'text/plain'];
+
+    if (!in_array($file['type'], $mimeTypes)) {
+      Response::json(['ok' => false, 'error' => 'Tipo de archivo inválido. Debe ser CSV'], 400);
+      return;
+    }
+
+    if ($file['size'] > 5242880) { // 5MB
+      Response::json(['ok' => false, 'error' => 'Archivo demasiado grande (máximo 5MB)'], 400);
+      return;
+    }
+
+    try {
+      $handle = fopen($file['tmp_name'], 'r');
+      if (!$handle) {
+        Response::json(['ok' => false, 'error' => 'No se pudo leer el archivo'], 500);
+        return;
+      }
+
+      // Leer headers
+      $headers = fgetcsv($handle);
+      $requiredHeaders = ['statement', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option', 'category', 'difficulty'];
+
+      if (!$headers || count(array_intersect($headers, $requiredHeaders)) !== count($requiredHeaders)) {
+        fclose($handle);
+        Response::json(['ok' => false, 'error' => 'Headers del CSV inválidos. Requeridos: ' . implode(', ', $requiredHeaders)], 400);
+        return;
+      }
+
+      // Crear batch
+      if (!$this->batchRepo) {
+        Response::json(['ok' => false, 'error' => 'Repositorio de batch no disponible'], 500);
+        return;
+      }
+
+      if (!$this->categoryRepo) {
+        Response::json(['ok' => false, 'error' => 'Repositorio de categorías no disponible'], 500);
+        return;
+      }
+
+      $batchId = $this->batchRepo->create([
+        'batch_name' => 'CSV-' . date('Y-m-d H:i:s'),
+        'batch_type' => 'csv_imported',
+        'description' => 'Importado desde CSV por admin',
+        'total_questions' => 0
+      ]);
+
+      $successCount = 0;
+      $errorCount = 0;
+      $errors = [];
+      $lineNumber = 2; // Headers en línea 1
+
+      // Procesar líneas
+      while (($row = fgetcsv($handle)) !== false) {
+        // Mapear valores del CSV a array asociativo
+        $rowData = array_combine($headers, $row);
+
+        try {
+          // Validar campos
+          $difficulty = (int)($rowData['difficulty'] ?? 0);
+          $correctOption = (int)($rowData['correct_option'] ?? 0);
+
+          if (!in_array($difficulty, [1, 2, 3, 4, 5])) {
+            throw new \Exception('Dificultad debe estar entre 1 y 5');
+          }
+
+          if (!in_array($correctOption, [1, 2, 3, 4])) {
+            throw new \Exception('correct_option debe estar entre 1 y 4');
+          }
+
+          if (empty(trim($rowData['statement'] ?? ''))) {
+            throw new \Exception('statement no puede estar vacío');
+          }
+
+          // Obtener categoría
+          $categoryId = $this->categoryRepo->getIdByName($rowData['category']);
+          if (!$categoryId) {
+            throw new \Exception('Categoría no existe: ' . $rowData['category']);
+          }
+
+          // Crear pregunta
+          $questionId = $this->questions->createWithBatch([
+            'statement' => $rowData['statement'],
+            'difficulty' => $difficulty,
+            'category_id' => $categoryId,
+            'source_id' => null
+          ], $batchId);
+
+          if (!$questionId) {
+            throw new \Exception('Error al crear pregunta');
+          }
+
+          // Crear opciones (correct_option es 1-indexed: a=1, b=2, c=3, d=4)
+          $optionsData = [
+            ['text' => $rowData['option_a'], 'is_correct' => $correctOption === 1],
+            ['text' => $rowData['option_b'], 'is_correct' => $correctOption === 2],
+            ['text' => $rowData['option_c'], 'is_correct' => $correctOption === 3],
+            ['text' => $rowData['option_d'], 'is_correct' => $correctOption === 4]
+          ];
+
+          $this->questions->saveOptions($questionId, $optionsData);
+
+          $successCount++;
+        } catch (\Exception $e) {
+          $errorCount++;
+          $errors[] = "Línea $lineNumber: " . $e->getMessage();
+        }
+
+        $lineNumber++;
+      }
+
+      fclose($handle);
+
+      // Actualizar status del batch
+      if ($successCount > 0 && $this->batchRepo) {
+        $this->batchRepo->updateStatus($batchId, $errorCount === 0 ? 'complete' : 'partial');
+      }
+
+      // Registrar en admin_system_logs
+      $pdo = $this->questions->getPdo();
+      if ($pdo) {
+        $logSQL = "INSERT INTO admin_system_logs (action, entity_table, entity_id, details, logged_at)
+                   VALUES (:action, :entity_table, :entity_id, :details, NOW())";
+        $logSt = $pdo->prepare($logSQL);
+        $logSt->execute([
+          ':action' => 'csv_imported',
+          ':entity_table' => 'question_batches',
+          ':entity_id' => $batchId,
+          ':details' => json_encode(['filename' => $file['name'], 'imported' => $successCount, 'errors' => $errorCount])
+        ]);
+      }
+
+      Response::json([
+        'ok' => true,
+        'imported' => $successCount,
+        'errors' => $errorCount,
+        'batch_id' => $batchId,
+        'error_details' => $errors
+      ]);
+    } catch (\Exception $e) {
+      error_log("Error importing CSV: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => 'Error al importar CSV: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Obtiene todas las preguntas sin verificar
+   *
+   * Endpoint: GET /admin/unverified?batchId={optional}
+   *
+   * @return void
+   */
+  public function getUnverifiedQuestions(): void
+  {
+    try {
+      $batchId = $_GET['batchId'] ?? null;
+      $batchId = $batchId ? (int)$batchId : null;
+
+      $unverified = $this->questions->getUnverifiedQuestions($batchId);
+
+      Response::json([
+        'ok' => true,
+        'questions' => $unverified,
+        'count' => count($unverified)
+      ]);
+    } catch (\Exception $e) {
+      error_log("Error getting unverified questions: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => 'Error al obtener preguntas: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Edita una explicación de una pregunta
+   *
+   * Endpoint: PUT /admin/explanation/{explanationId}
+   *
+   * @param array $params Parámetros de la ruta (contiene 'explanationId')
+   * @return void
+   */
+  public function editExplanation(array $params): void
+  {
+    $explanationId = (int)($params['explanationId'] ?? 0);
+
+    if ($explanationId <= 0) {
+      Response::json(['ok' => false, 'error' => 'ID de explicación inválido'], 400);
+      return;
+    }
+
+    $body = json_decode(file_get_contents('php://input'), true) ?? [];
+    $newText = $body['text'] ?? null;
+
+    if (!$newText || empty(trim($newText))) {
+      Response::json(['ok' => false, 'error' => 'El texto no puede estar vacío'], 400);
+      return;
+    }
+
+    try {
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok' => false, 'error' => 'Database connection failed'], 500);
+        return;
+      }
+
+      // Actualizar explicación
+      $sql = "UPDATE question_explanations SET text = :text WHERE id = :id";
+      $st = $pdo->prepare($sql);
+      $success = $st->execute([
+        ':text' => trim($newText),
+        ':id' => $explanationId
+      ]);
+
+      if (!$success || $st->rowCount() === 0) {
+        Response::json(['ok' => false, 'error' => 'Explicación no encontrada'], 404);
+        return;
+      }
+
+      // Registrar en admin_system_logs
+      $logSQL = "INSERT INTO admin_system_logs (action, entity_table, entity_id, details, logged_at)
+                 VALUES (:action, :entity_table, :entity_id, :details, NOW())";
+      $logSt = $pdo->prepare($logSQL);
+      $logSt->execute([
+        ':action' => 'explanation_edited',
+        ':entity_table' => 'question_explanations',
+        ':entity_id' => $explanationId,
+        ':details' => json_encode(['updated_text' => substr($newText, 0, 100)])
+      ]);
+
+      Response::json([
+        'ok' => true,
+        'explanation_id' => $explanationId,
+        'message' => 'Explicación actualizada'
+      ]);
+    } catch (\Exception $e) {
+      error_log("Error editing explanation: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => 'Error al editar explicación: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Obtiene estadísticas de todos los batches
+   *
+   * Endpoint: GET /admin/batch-statistics
+   *
+   * @return void
+   */
+  public function getBatchStatistics(): void
+  {
+    try {
+      if (!$this->batchRepo) {
+        Response::json(['ok' => false, 'error' => 'Repositorio de batch no disponible'], 500);
+        return;
+      }
+
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok' => false, 'error' => 'Database connection failed'], 500);
+        return;
+      }
+
+      $sql = "SELECT
+                id,
+                batch_name,
+                batch_type,
+                total_questions,
+                verified_count,
+                ROUND((verified_count / NULLIF(total_questions, 0) * 100), 2) as verification_percent,
+                imported_at,
+                status
+              FROM question_batches
+              ORDER BY imported_at DESC";
+
+      $st = $pdo->prepare($sql);
+      $st->execute();
+      $batches = $st->fetchAll() ?: [];
+
+      Response::json([
+        'ok' => true,
+        'batches' => $batches,
+        'count' => count($batches)
+      ]);
+    } catch (\Exception $e) {
+      error_log("Error getting batch statistics: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => 'Error al obtener estadísticas: ' . $e->getMessage()], 500);
     }
   }
 }

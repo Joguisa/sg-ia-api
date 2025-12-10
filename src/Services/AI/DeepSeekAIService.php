@@ -56,7 +56,7 @@ final class DeepSeekAIService implements GenerativeAIInterface
         try {
             $response = $this->client->post($this->apiEndpoint, [
                 'json' => [
-                    'model' => 'deepseek-chat', // Modelo de DeepSeek
+                    'model' => 'deepseek-chat',
                     'messages' => [
                         [
                             'role' => 'system',
@@ -194,12 +194,14 @@ final class DeepSeekAIService implements GenerativeAIInterface
 
         INSTRUCCIONES CRÍTICAS:
         1. Genera SOLO un JSON válido, sin markdown ni comentarios
-        2. Estructura EXACTA: { "statement": "...", "options": [{"text": "...", "is_correct": bool}], "explanation": "...", "source_ref": "..." }
+        2. Estructura EXACTA: { "statement": "...", "options": [{"text": "...", "is_correct": bool}], "explanation_correct": "...", "explanation_incorrect": "...", "source_ref": "..." }
         3. Incluye exactamente 4 opciones
         4. Una sola opción debe ser correcta (is_correct: true)
         5. El enunciado debe ser claro y conciso (100-300 caracteres)
         6. Opciones balanceadas, ninguna obviamente incorrecta
-        7. Explicación medida (150-250 caracteres)
+        7. Genera DOS explicaciones diferentes:
+           - explanation_correct: Retroalimentación positiva y refuerzo del concepto cuando el estudiante responde correctamente (50-100 palabras)
+           - explanation_incorrect: Explicación educativa general sobre por qué la respuesta correcta es la adecuada, útil para quien se equivocó (50-100 palabras)
         8. source_ref: referencia a "Guías MSP Ecuador", "OMS", o literatura médica
 
         JSON VÁLIDO ESTRICTO (sin markdown):
@@ -263,7 +265,8 @@ final class DeepSeekAIService implements GenerativeAIInterface
             'statement' => trim($json['statement']),
             'options' => $json['options'],
             'correctOption' => $correctIndex,
-            'explanation' => $json['explanation'] ?? 'Sin explicación',
+            'explanation_correct' => trim($json['explanation_correct'] ?? 'Sin explicación'),
+            'explanation_incorrect' => trim($json['explanation_incorrect'] ?? 'Sin explicación'),
             'source_ref' => $json['source_ref'] ?? 'DeepSeek AI'
         ];
     }
