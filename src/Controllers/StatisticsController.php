@@ -69,7 +69,7 @@ final class StatisticsController {
           category_id,
           category_name,
           answers,
-          accuracy,
+          accuracy_percent,
           avg_time_sec
         FROM v_player_topic_stats
         WHERE player_id = ?
@@ -92,7 +92,7 @@ final class StatisticsController {
           'category_id' => (int)$t['category_id'],
           'category_name' => $t['category_name'],
           'answers' => (int)$t['answers'],
-          'accuracy' => (float)($t['accuracy'] ?? 0),
+          'accuracy' => (float)($t['accuracy_percent'] ?? 0),
           'avg_time_sec' => (float)($t['avg_time_sec'] ?? 0)
         ], $topics)
       ], 200);

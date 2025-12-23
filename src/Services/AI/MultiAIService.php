@@ -12,11 +12,26 @@ final class MultiAIService implements GenerativeAIInterface
     private int $currentProviderIndex = 0;
     private array $providerErrors = [];
 
+    private array $providerMap = [
+        'gemini' => 'Src\\Services\\AI\\GeminiAIService',
+        'groq' => 'Src\\Services\\AI\\GroqAIService',
+        'deepseek' => 'Src\\Services\\AI\\DeepSeekAIService',
+        'fireworks' => 'Src\\Services\\AI\\FireworksAIService'
+    ];
+    private string $preferredProvider = 'auto';
+    private bool $wasFailover = false;
+
     public function __construct(
         array $providerConfigs,
-        private ?SystemPromptRepositoryInterface $prompts = null
+        private ?SystemPromptRepositoryInterface $prompts = null,
+        ?string $preferredProvider = null
     ) {
+        $this->preferredProvider = $preferredProvider ?? 'auto';
         $this->initializeProviders($providerConfigs);
+
+        if ($this->preferredProvider !== 'auto') {
+            $this->prioritizeProvider($this->preferredProvider);
+        }
     }
 
     private function initializeProviders(array $configs): void
@@ -41,8 +56,31 @@ final class MultiAIService implements GenerativeAIInterface
 
     }
 
+    private function prioritizeProvider(string $providerName): void
+    {
+        $targetClass = $this->providerMap[$providerName] ?? null;
+        if (!$targetClass) {
+            return;
+        }
+
+        // Reorder array to put preferred provider first
+        $reordered = [];
+        foreach ($this->providers as $provider) {
+            if (get_class($provider) === $targetClass) {
+                array_unshift($reordered, $provider);
+            } else {
+                $reordered[] = $provider;
+            }
+        }
+        $this->providers = $reordered;
+        $this->currentProviderIndex = 0;
+    }
+
     public function generateQuestion(string $topic, int $difficulty): array
     {
+        $initialIndex = $this->currentProviderIndex;
+        $this->wasFailover = false;
+
         $attempts = 0;
         $maxAttempts = count($this->providers);
 
@@ -51,7 +89,14 @@ final class MultiAIService implements GenerativeAIInterface
             $providerName = get_class($provider);
 
             try {
-                return $provider->generateQuestion($topic, $difficulty);
+                $result = $provider->generateQuestion($topic, $difficulty);
+
+                // Detect if failover occurred
+                if ($this->currentProviderIndex !== $initialIndex) {
+                    $this->wasFailover = true;
+                }
+
+                return $result;
             } catch (\RuntimeException $e) {
                 $this->providerErrors[$providerName] = $e->getMessage();
                 error_log("Provider {$providerName} failed: " . $e->getMessage());
@@ -108,5 +153,35 @@ final class MultiAIService implements GenerativeAIInterface
             return 'none';
         }
         return get_class($this->providers[$this->currentProviderIndex]);
+    }
+
+    public function getActiveProviderName(): string
+    {
+        $className = get_class($this->providers[$this->currentProviderIndex]);
+        foreach ($this->providerMap as $name => $class) {
+            if ($class === $className) {
+                return $name;
+            }
+        }
+        return 'unknown';
+    }
+
+    public function hadFailover(): bool
+    {
+        return $this->wasFailover;
+    }
+
+    public function getAvailableProviders(): array
+    {
+        $providers = [];
+        foreach ($this->providers as $provider) {
+            $className = get_class($provider);
+            foreach ($this->providerMap as $name => $class) {
+                if ($class === $className) {
+                    $providers[] = ['name' => $name, 'available' => true];
+                }
+            }
+        }
+        return $providers;
     }
 }

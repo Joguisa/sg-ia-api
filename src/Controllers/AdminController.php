@@ -312,7 +312,9 @@ final class AdminController {
         'id' => $prompt->id,
         'prompt_text' => $prompt->promptText,
         'temperature' => $prompt->temperature,
-        'is_active' => $prompt->isActive
+        'is_active' => $prompt->isActive,
+        'preferred_ai_provider' => $prompt->preferredAiProvider,
+        'max_questions_per_game' => $prompt->maxQuestionsPerGame
       ]
     ], 200);
   }
@@ -321,7 +323,7 @@ final class AdminController {
    * Actualizar configuración de prompt de IA
    *
    * Endpoint: PUT /admin/config/prompt
-   * Body: { "prompt_text": "...", "temperature": 0.7 }
+   * Body: { "prompt_text": "...", "temperature": 0.7, "preferred_ai_provider": "gemini" (opcional) }
    *
    * @return void
    */
@@ -336,6 +338,8 @@ final class AdminController {
 
     $promptText = trim($data['prompt_text']);
     $temperature = (float)$data['temperature'];
+    $preferredProvider = $data['preferred_ai_provider'] ?? null;
+    $maxQuestions = isset($data['max_questions_per_game']) ? (int)$data['max_questions_per_game'] : 15;
 
     if (empty($promptText)) {
       Response::json(['ok'=>false,'error'=>'Prompt text cannot be empty'], 400);
@@ -347,8 +351,35 @@ final class AdminController {
       return;
     }
 
+    // Validar max_questions
+    if ($maxQuestions < 5 || $maxQuestions > 100) {
+      Response::json([
+        'ok' => false,
+        'error' => 'Max questions must be between 5 and 100'
+      ], 400);
+      return;
+    }
+
+    // Validar provider si se proporciona
+    if ($preferredProvider !== null) {
+      $validProviders = ['auto', 'gemini', 'groq', 'deepseek', 'fireworks'];
+      if (!in_array($preferredProvider, $validProviders)) {
+        Response::json([
+          'ok' => false,
+          'error' => 'Invalid preferred_ai_provider. Must be one of: ' . implode(', ', $validProviders)
+        ], 400);
+        return;
+      }
+    }
+
     try {
-      $this->prompts->update($promptText, $temperature);
+      // Usar updateWithProvider si se proporciona el provider, sino usar update
+      if ($preferredProvider !== null) {
+        $this->prompts->updateWithProvider($promptText, $temperature, $preferredProvider, $maxQuestions);
+      } else {
+        $this->prompts->update($promptText, $temperature);
+      }
+
       Response::json([
         'ok' => true,
         'message' => 'Prompt configuration updated successfully'
@@ -405,6 +436,72 @@ final class AdminController {
   }
 
   /**
+   * Actualizar una categoría
+   *
+   * Endpoint: PUT /admin/categories/{id}
+   * Body: { "name": "...", "description": "..." }
+   *
+   * @param array $params Parámetros de la ruta (contiene 'id')
+   * @return void
+   */
+  public function updateCategory(array $params): void {
+    $categoryId = (int)($params['id'] ?? 0);
+
+    if ($categoryId <= 0) {
+      Response::json(['ok'=>false,'error'=>'Invalid category ID'], 400);
+      return;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+    ValidationService::requireFields($data, ['name']);
+
+    $name = trim($data['name']);
+    $description = trim($data['description'] ?? '');
+
+    if (empty($name)) {
+      Response::json(['ok'=>false,'error'=>'Category name cannot be empty'], 400);
+      return;
+    }
+
+    try {
+      if (!$this->categoryRepo) {
+        Response::json(['ok'=>false,'error'=>'Category repository not available'], 500);
+        return;
+      }
+
+      // Verificar que la categoría existe
+      $existingCategory = $this->categoryRepo->find($categoryId);
+      if (!$existingCategory) {
+        Response::json(['ok'=>false,'error'=>'Category not found'], 404);
+        return;
+      }
+
+      // Actualizar categoría
+      $success = $this->categoryRepo->update($categoryId, [
+        'name' => $name,
+        'description' => $description ?: null
+      ]);
+
+      if (!$success) {
+        Response::json(['ok'=>false,'error'=>'Failed to update category'], 500);
+        return;
+      }
+
+      Response::json([
+        'ok' => true,
+        'category_id' => $categoryId,
+        'message' => 'Category updated successfully'
+      ], 200);
+    } catch (\Exception $e) {
+      if (str_contains($e->getMessage(), 'Duplicate')) {
+        Response::json(['ok'=>false,'error'=>'Category name already exists'], 409);
+      } else {
+        Response::json(['ok'=>false,'error'=>'Failed to update category: ' . $e->getMessage()], 500);
+      }
+    }
+  }
+
+  /**
    * Eliminar una categoría
    *
    * Endpoint: DELETE /admin/categories/{id}
@@ -421,17 +518,23 @@ final class AdminController {
     }
 
     try {
-      $pdo = $this->questions->getPdo();
-      if (!$pdo) {
-        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+      if (!$this->categoryRepo) {
+        Response::json(['ok'=>false,'error'=>'Category repository not available'], 500);
         return;
       }
 
-      $stmt = $pdo->prepare("DELETE FROM question_categories WHERE id = ?");
-      $stmt->execute([$categoryId]);
-
-      if ($stmt->rowCount() === 0) {
+      // Verificar que la categoría existe
+      $existingCategory = $this->categoryRepo->find($categoryId);
+      if (!$existingCategory) {
         Response::json(['ok'=>false,'error'=>'Category not found'], 404);
+        return;
+      }
+
+      // Intentar eliminar
+      $success = $this->categoryRepo->delete($categoryId);
+
+      if (!$success) {
+        Response::json(['ok'=>false,'error'=>'Failed to delete category'], 500);
         return;
       }
 
@@ -440,7 +543,11 @@ final class AdminController {
         'message' => 'Category deleted successfully'
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Failed to delete category: ' . $e->getMessage()], 500);
+      if (str_contains($e->getMessage(), 'preguntas asociadas')) {
+        Response::json(['ok'=>false,'error'=>'Cannot delete category with associated questions'], 409);
+      } else {
+        Response::json(['ok'=>false,'error'=>'Failed to delete category: ' . $e->getMessage()], 500);
+      }
     }
   }
 
@@ -455,6 +562,11 @@ final class AdminController {
   public function generateBatch(): void {
     if (!$this->gameService) {
       Response::json(['ok'=>false,'error'=>'Game service not available'], 500);
+      return;
+    }
+
+    if (!$this->batchRepo) {
+      Response::json(['ok'=>false,'error'=>'Batch repository not available'], 500);
       return;
     }
 
@@ -481,11 +593,21 @@ final class AdminController {
     }
 
     try {
+      // Crear batch antes de generar preguntas
+      $batchName = "IA-Gen-" . date('Y-m-d_H-i-s');
+      $batchId = $this->batchRepo->create([
+        'batch_name' => $batchName,
+        'batch_type' => 'ai_generated',
+        'description' => "Generación automática: {$quantity} preguntas, dificultad {$difficulty}",
+        'total_questions' => $quantity
+      ]);
+
       $generated = [];
       $failed = 0;
 
       for ($i = 0; $i < $quantity; $i++) {
-        $question = $this->gameService->generateAndSaveQuestion($categoryId, $difficulty);
+        // Pasar batchId para asociar pregunta con batch y capturar proveedor
+        $question = $this->gameService->generateAndSaveQuestion($categoryId, $difficulty, $batchId);
 
         if ($question) {
           $generated[] = $question;
@@ -494,12 +616,18 @@ final class AdminController {
         }
       }
 
+      // Actualizar status del batch según resultados
+      $status = $failed === 0 ? 'complete' : ($failed < $quantity ? 'partial' : 'pending');
+      $this->batchRepo->updateStatus($batchId, $status);
+
       Response::json([
         'ok' => true,
+        'batch_id' => $batchId,
+        'batch_name' => $batchName,
         'generated' => count($generated),
         'failed' => $failed,
         'questions' => $generated,
-        'message' => "Generated " . count($generated) . " questions successfully"
+        'message' => "Generated " . count($generated) . " questions successfully in batch {$batchName}"
       ], 201);
     } catch (\Exception $e) {
       Response::json(['ok'=>false,'error'=>'Batch generation failed: ' . $e->getMessage()], 500);
@@ -812,7 +940,7 @@ final class AdminController {
 
       // Leer headers
       $headers = fgetcsv($handle);
-      $requiredHeaders = ['statement', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option', 'category', 'difficulty'];
+      $requiredHeaders = ['category_id', 'difficulty', 'statement', 'option_1', 'option_2', 'option_3', 'option_4', 'correct_option_index', 'explanation_correct', 'explanation_incorrect', 'source_citation'];
 
       if (!$headers || count(array_intersect($headers, $requiredHeaders)) !== count($requiredHeaders)) {
         fclose($handle);
@@ -849,26 +977,64 @@ final class AdminController {
         $rowData = array_combine($headers, $row);
 
         try {
-          // Validar campos
+          // Validar campos básicos
+          $categoryId = (int)($rowData['category_id'] ?? 0);
           $difficulty = (int)($rowData['difficulty'] ?? 0);
-          $correctOption = (int)($rowData['correct_option'] ?? 0);
+          $correctOptionIndex = (int)($rowData['correct_option_index'] ?? -1);
 
-          if (!in_array($difficulty, [1, 2, 3, 4, 5])) {
-            throw new \Exception('Dificultad debe estar entre 1 y 5');
+          if ($categoryId <= 0) {
+            throw new \Exception('category_id debe ser un número positivo');
           }
 
-          if (!in_array($correctOption, [1, 2, 3, 4])) {
-            throw new \Exception('correct_option debe estar entre 1 y 4');
+          if (!in_array($difficulty, [1, 2, 3, 4, 5])) {
+            throw new \Exception('difficulty debe estar entre 1 y 5');
+          }
+
+          if (!in_array($correctOptionIndex, [0, 1, 2, 3])) {
+            throw new \Exception('correct_option_index debe estar entre 0 y 3');
           }
 
           if (empty(trim($rowData['statement'] ?? ''))) {
             throw new \Exception('statement no puede estar vacío');
           }
 
-          // Obtener categoría
-          $categoryId = $this->categoryRepo->getIdByName($rowData['category']);
-          if (!$categoryId) {
-            throw new \Exception('Categoría no existe: ' . $rowData['category']);
+          // Validar opciones
+          foreach (['option_1', 'option_2', 'option_3', 'option_4'] as $optKey) {
+            if (empty(trim($rowData[$optKey] ?? ''))) {
+              throw new \Exception("$optKey no puede estar vacío");
+            }
+          }
+
+          // Validar explicaciones (obligatorias)
+          $explanationCorrect = trim($rowData['explanation_correct'] ?? '');
+          $explanationIncorrect = trim($rowData['explanation_incorrect'] ?? '');
+          $sourceCitation = trim($rowData['source_citation'] ?? '');
+
+          if (empty($explanationCorrect)) {
+            throw new \Exception('explanation_correct no puede estar vacío');
+          }
+          if (strlen($explanationCorrect) > 2000) {
+            throw new \Exception('explanation_correct no puede exceder 2000 caracteres');
+          }
+
+          if (empty($explanationIncorrect)) {
+            throw new \Exception('explanation_incorrect no puede estar vacío');
+          }
+          if (strlen($explanationIncorrect) > 2000) {
+            throw new \Exception('explanation_incorrect no puede exceder 2000 caracteres');
+          }
+
+          if (empty($sourceCitation)) {
+            throw new \Exception('source_citation no puede estar vacío');
+          }
+          if (strlen($sourceCitation) > 255) {
+            throw new \Exception('source_citation no puede exceder 255 caracteres');
+          }
+
+          // Verificar que la categoría existe
+          $category = $this->categoryRepo->find($categoryId);
+          if (!$category) {
+            throw new \Exception('Categoría no existe con ID: ' . $categoryId);
           }
 
           // Crear pregunta
@@ -883,15 +1049,31 @@ final class AdminController {
             throw new \Exception('Error al crear pregunta');
           }
 
-          // Crear opciones (correct_option es 1-indexed: a=1, b=2, c=3, d=4)
+          // Crear opciones (correct_option_index es 0-indexed: 0=option_1, 1=option_2, etc.)
           $optionsData = [
-            ['text' => $rowData['option_a'], 'is_correct' => $correctOption === 1],
-            ['text' => $rowData['option_b'], 'is_correct' => $correctOption === 2],
-            ['text' => $rowData['option_c'], 'is_correct' => $correctOption === 3],
-            ['text' => $rowData['option_d'], 'is_correct' => $correctOption === 4]
+            ['text' => $rowData['option_1'], 'is_correct' => $correctOptionIndex === 0],
+            ['text' => $rowData['option_2'], 'is_correct' => $correctOptionIndex === 1],
+            ['text' => $rowData['option_3'], 'is_correct' => $correctOptionIndex === 2],
+            ['text' => $rowData['option_4'], 'is_correct' => $correctOptionIndex === 3]
           ];
 
           $this->questions->saveOptions($questionId, $optionsData);
+
+          // Guardar explicación correcta
+          $this->questions->saveExplanation(
+            $questionId,
+            $explanationCorrect,
+            $sourceCitation,
+            'correct'
+          );
+
+          // Guardar explicación incorrecta
+          $this->questions->saveExplanation(
+            $questionId,
+            $explanationIncorrect,
+            $sourceCitation,
+            'incorrect'
+          );
 
           $successCount++;
         } catch (\Exception $e) {
@@ -1030,6 +1212,47 @@ final class AdminController {
   }
 
   /**
+   * Obtiene la lista de proveedores de IA disponibles
+   *
+   * Endpoint: GET /admin/available-providers
+   *
+   * @return void
+   */
+  public function getAvailableProviders(): void
+  {
+    try {
+      if (!$this->gameService) {
+        Response::json(['ok' => false, 'error' => 'Game service not available'], 500);
+        return;
+      }
+
+      $multiAI = $this->gameService->getGenerativeAI();
+
+      if (!$multiAI) {
+        Response::json(['ok' => false, 'error' => 'AI service not available'], 500);
+        return;
+      }
+
+      // Verificar si el servicio tiene el método getAvailableProviders
+      if (!method_exists($multiAI, 'getAvailableProviders')) {
+        Response::json(['ok' => false, 'error' => 'Multi-AI service not configured'], 500);
+        return;
+      }
+
+      $providers = $multiAI->getAvailableProviders();
+
+      Response::json([
+        'ok' => true,
+        'providers' => $providers,
+        'count' => count($providers)
+      ]);
+    } catch (\Exception $e) {
+      error_log("Error getting available providers: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => 'Error al obtener proveedores: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
    * Obtiene estadísticas de todos los batches
    *
    * Endpoint: GET /admin/batch-statistics
@@ -1054,6 +1277,7 @@ final class AdminController {
                 id,
                 batch_name,
                 batch_type,
+                ai_provider_used,
                 total_questions,
                 verified_count,
                 ROUND((verified_count / NULLIF(total_questions, 0) * 100), 2) as verification_percent,

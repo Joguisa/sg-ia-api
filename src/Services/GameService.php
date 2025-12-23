@@ -4,6 +4,7 @@ namespace Src\Services;
 
 use Src\Repositories\Interfaces\{SessionRepositoryInterface, QuestionRepositoryInterface, AnswerRepositoryInterface};
 use Src\Repositories\Interfaces\PlayerRepositoryInterface;
+use Src\Repositories\Interfaces\QuestionBatchRepositoryInterface;
 use Src\Services\AI\GenerativeAIInterface;
 
 final class GameService
@@ -14,8 +15,117 @@ final class GameService
     private AnswerRepositoryInterface $answers,
     private PlayerRepositoryInterface $players,
     private AIEngine $ai,
-    private ?GenerativeAIInterface $generativeAi = null
+    private ?GenerativeAIInterface $generativeAi = null,
+    private ?QuestionBatchRepositoryInterface $batchRepo = null
   ) {}
+
+  /**
+   * Cuenta preguntas respondidas por nivel de dificultad en una sesión
+   * Mapea DECIMAL difficulty_at_answer a INT usando ROUND()
+   *
+   * @param int $sessionId ID de la sesión
+   * @return array Array asociativo [nivel => cantidad] ej: [1 => 4, 2 => 3, 3 => 5]
+   */
+  private function getQuestionsPerLevel(int $sessionId): array
+  {
+    $pdo = $this->questions->getPdo();
+
+    $sql = "SELECT
+              ROUND(difficulty_at_answer) as level,
+              COUNT(*) as count
+            FROM player_answers
+            WHERE session_id = :session_id
+            GROUP BY ROUND(difficulty_at_answer)";
+
+    $st = $pdo->prepare($sql);
+    $st->execute([':session_id' => $sessionId]);
+    $results = $st->fetchAll(\PDO::FETCH_ASSOC);
+
+    $counts = [];
+    foreach ($results as $row) {
+      $counts[(int)$row['level']] = (int)$row['count'];
+    }
+
+    return $counts;
+  }
+
+  /**
+   * Calcula qué niveles de dificultad están bloqueados para una sesión
+   * Un nivel se bloquea cuando: preguntas_en_nivel >= FLOOR(max_questions / 5)
+   *
+   * @param int $sessionId ID de la sesión
+   * @param int $maxQuestions Máximo de preguntas configurado
+   * @return array Array de niveles bloqueados ej: [1, 3, 5]
+   */
+  private function getLockedLevels(int $sessionId, int $maxQuestions): array
+  {
+    $questionsPerLevel = $this->getQuestionsPerLevel($sessionId);
+    $questionsPerLevelLimit = (int)floor($maxQuestions / 5);
+
+    error_log("Questions per level: " . json_encode($questionsPerLevel));
+    error_log("Questions per level limit: $questionsPerLevelLimit");
+
+    $locked = [];
+    foreach ($questionsPerLevel as $level => $count) {
+      if ($count >= $questionsPerLevelLimit) {
+        $locked[] = $level;
+      }
+    }
+
+    return $locked;
+  }
+
+  /**
+   * Obtiene el total de preguntas respondidas en una sesión
+   *
+   * @param int $sessionId ID de la sesión
+   * @return int Cantidad total de preguntas respondidas
+   */
+  private function getTotalQuestionsAnswered(int $sessionId): int
+  {
+    $pdo = $this->questions->getPdo();
+
+    $sql = "SELECT COUNT(*) as total
+            FROM player_answers
+            WHERE session_id = :session_id";
+
+    $st = $pdo->prepare($sql);
+    $st->execute([':session_id' => $sessionId]);
+    $result = $st->fetch();
+
+    return $result ? (int)$result['total'] : 0;
+  }
+
+  /**
+   * Obtiene la configuración de máximo de preguntas por juego desde system_prompts
+   *
+   * @return int Máximo de preguntas (5-100), default 15
+   */
+  private function getMaxQuestionsConfig(): int
+  {
+    $pdo = $this->questions->getPdo();
+
+    $sql = "SELECT max_questions_per_game
+            FROM system_prompts
+            WHERE is_active = 1
+            LIMIT 1";
+
+    $st = $pdo->prepare($sql);
+    $st->execute();
+    $result = $st->fetch();
+
+    return $result ? (int)$result['max_questions_per_game'] : 15;
+  }
+
+  /**
+   * Obtiene el servicio de IA generativa
+   *
+   * @return GenerativeAIInterface|null
+   */
+  public function getGenerativeAI(): ?GenerativeAIInterface
+  {
+    return $this->generativeAi;
+  }
 
   public function startSession(int $playerId, float $startDifficulty = 1.0): array
   {
@@ -40,12 +150,12 @@ final class GameService
    * Excluye preguntas ya respondidas en la sesión actual.
    * NO genera preguntas en tiempo real - el admin debe generarlas previamente.
    *
-   * @param int $categoryId ID de la categoría
+   * @param int|null $categoryId ID de la categoría (NULL = todas las categorías)
    * @param int $difficulty Dificultad requerida (1-5)
    * @param int $sessionId ID de la sesión actual
    * @return array|null Array con datos de la pregunta o null si no hay preguntas verificadas disponibles
    */
-  public function nextQuestion(int $categoryId, int $difficulty, int $sessionId): ?array
+  public function nextQuestion(?int $categoryId, int $difficulty, int $sessionId): ?array
   {
     if ($difficulty < 1 || $difficulty > 5) {
       throw new \RangeError("Dificultad debe estar entre 1 y 5");
@@ -57,16 +167,48 @@ final class GameService
       throw new \RuntimeException('Sesión no existe');
     }
 
-    // Si la sesión está terminada (game_over), no devolver más preguntas
-    if ($session->status === 'game_over') {
+    // Si la sesión está terminada (game_over o completed), no devolver más preguntas
+    if ($session->status === 'game_over' || $session->status === 'completed') {
       return null;
     }
 
-    // Buscar pregunta existente y verificada excluyendo las ya respondidas
-    $q = $this->questions->getRandomByDifficultyExcludingAnswered($categoryId, $difficulty, $sessionId);
+    // NUEVO: Verificar límite de preguntas
+    $maxQuestions = $this->getMaxQuestionsConfig();
+    $totalAnswered = $this->getTotalQuestionsAnswered($sessionId);
+
+    if ($totalAnswered >= $maxQuestions) {
+      // Marcar sesión como 'completed' (diferente a 'game_over')
+      $this->sessions->updateProgress(
+        $sessionId,
+        $session->score,
+        $session->lives,
+        'completed',
+        $session->currentDifficulty
+      );
+      return null;
+    }
+
+    // NUEVO: Calcular niveles bloqueados
+    $lockedLevels = $this->getLockedLevels($sessionId, $maxQuestions);
+
+    // DEBUG: Log para entender qué está pasando
+    $catLog = $categoryId ? "Category: $categoryId" : "Category: ALL";
+    error_log("GameService::nextQuestion - Session: $sessionId, Difficulty: $difficulty, $catLog");
+    error_log("Total answered: $totalAnswered / $maxQuestions");
+    error_log("Locked levels: " . json_encode($lockedLevels));
+
+    // Buscar pregunta excluyendo respondidas Y niveles bloqueados
+    $q = $this->questions->getRandomExcludingAnsweredAndLockedLevels(
+      $categoryId,
+      $difficulty,
+      $sessionId,
+      $lockedLevels
+    );
+
+    error_log("Question found: " . ($q ? "ID {$q->id}" : "NULL"));
 
     if ($q) {
-      // AGREGAR: Obtener las opciones
+      // Obtener las opciones
       $options = $this->questions->getOptionsByQuestionId($q->id);
 
       return [
@@ -78,12 +220,17 @@ final class GameService
           'id' => (int)$opt['id'],
           'text' => $opt['text'],
           'is_correct' => (bool)$opt['is_correct']
-        ], $options)
+        ], $options),
+        // NUEVO: Metadata de progreso para el frontend
+        'progress' => [
+          'total_answered' => $totalAnswered,
+          'max_questions' => $maxQuestions,
+          'locked_levels' => $lockedLevels
+        ]
       ];
     }
 
-    // CAMBIO: No generar preguntas en tiempo real durante el juego
-    // Solo el admin puede generar y debe verificarlas antes de que aparezcan
+    // No hay preguntas disponibles (sin niveles bloqueados o todas respondidas)
     return null;
   }
 
@@ -92,26 +239,47 @@ final class GameService
    *
    * @param int $categoryId ID de la categoría
    * @param int $difficulty Nivel de dificultad
+   * @param int|null $batchId ID del batch al que pertenece la pregunta (opcional)
    * @return array|null Datos de la pregunta generada o null si falla
    */
-  public function generateAndSaveQuestion(int $categoryId, int $difficulty): ?array
+  public function generateAndSaveQuestion(int $categoryId, int $difficulty, ?int $batchId = null): ?array
   {
     try {
       // Obtener nombre de la categoría (asumiendo que existe, si no lanzará excepción)
       $categoryName = $this->getCategoryName($categoryId);
 
-      // Generar pregunta con Gemini
+      // Generar pregunta con IA
       $generatedData = $this->generativeAi->generateQuestion($categoryName, $difficulty);
 
+      // Capturar información del proveedor de IA
+      $providerUsed = $this->generativeAi->getActiveProviderName();
+      $hadFailover = $this->generativeAi->hadFailover();
+
       // Crear pregunta en BD marcada como generada por IA y no verificada por admin
-      $questionId = $this->questions->create([
-        'statement' => $generatedData['statement'],
-        'difficulty' => $difficulty,
-        'category_id' => $categoryId,
-        'is_active' => 1,
-        'is_ai_generated' => true,
-        'admin_verified' => false
-      ]);
+      if ($batchId !== null) {
+        // Usar createWithBatch si se proporciona batchId
+        $questionId = $this->questions->createWithBatch([
+          'statement' => $generatedData['statement'],
+          'difficulty' => $difficulty,
+          'category_id' => $categoryId,
+          'source_id' => null
+        ], $batchId);
+      } else {
+        // Usar create normal si no hay batchId
+        $questionId = $this->questions->create([
+          'statement' => $generatedData['statement'],
+          'difficulty' => $difficulty,
+          'category_id' => $categoryId,
+          'is_active' => 1,
+          'is_ai_generated' => true,
+          'admin_verified' => false
+        ]);
+      }
+
+      // Actualizar batch con proveedor usado (si se proporcionó batch y repositorio disponible)
+      if ($batchId !== null && $this->batchRepo !== null && $providerUsed) {
+        $this->batchRepo->updateAiProvider($batchId, $providerUsed);
+      }
 
       // Guardar opciones
       $this->questions->saveOptions($questionId, $generatedData['options']);

@@ -54,11 +54,17 @@ final class QuestionRepository implements QuestionRepositoryInterface
       $difficulties[] = $difficulty + 1;
     }
 
+    // Generate named placeholders for IN clause
+    $diffPlaceholders = [];
+    foreach ($difficulties as $index => $diff) {
+      $diffPlaceholders[] = ':diff_' . $index;
+    }
+
     $sql = "SELECT q.id, q.statement, q.difficulty, q.category_id, q.is_ai_generated, q.admin_verified
             FROM questions q
             WHERE q.is_active = 1
               AND q.category_id = :c
-              AND q.difficulty IN (" . implode(',', array_fill(0, count($difficulties), '?')) . ")
+              AND q.difficulty IN (" . implode(',', $diffPlaceholders) . ")
               AND q.admin_verified = 1
               AND q.id NOT IN (
                 SELECT pa.question_id
@@ -73,20 +79,157 @@ final class QuestionRepository implements QuestionRepositoryInterface
               RAND()
             LIMIT 1";
 
-    $st = $this->db->pdo()->prepare($sql);
-    $params = [':c' => $categoryId, ':session_id' => $sessionId, ':preferred_diff' => $difficulty];
+    // Build complete params array with all named parameters
+    $params = [
+      ':c' => $categoryId,
+      ':session_id' => $sessionId,
+      ':preferred_diff' => $difficulty
+    ];
 
-    // Agregar dificultades como parámetros posicionales
+    // Add dynamic difficulty parameters
     foreach ($difficulties as $index => $diff) {
-      $st->bindValue($index + 1, $diff, \PDO::PARAM_INT);
+      $params[':diff_' . $index] = $diff;
     }
 
-    // Ejecutar con parámetros nombrados
-    foreach ($params as $key => $value) {
-      $st->bindValue($key, $value);
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute($params);
+    $r = $st->fetch();
+
+    return $r ? new Question(
+      (int)$r['id'],
+      $r['statement'],
+      (int)$r['difficulty'],
+      (int)$r['category_id'],
+      (bool)$r['is_ai_generated'],
+      (bool)$r['admin_verified']
+    ) : null;
+  }
+
+  /**
+   * Obtiene una pregunta aleatoria excluyendo preguntas respondidas Y niveles bloqueados
+   *
+   * @param int|null $categoryId ID de la categoría (NULL = todas las categorías)
+   * @param int $difficulty Nivel de dificultad preferido
+   * @param int $sessionId ID de la sesión actual
+   * @param array $lockedLevels Array de niveles bloqueados [1, 2, 3]
+   * @return Question|null Pregunta aleatoria o null si no hay disponibles
+   */
+  public function getRandomExcludingAnsweredAndLockedLevels(
+    ?int $categoryId,
+    int $difficulty,
+    int $sessionId,
+    array $lockedLevels
+  ): ?Question {
+    // ESTRATEGIA DE FALLBACK CON 2 INTENTOS
+    // INTENTO 1: Buscar en el nivel actual y adyacentes (no bloqueados)
+    $difficulties = [$difficulty];
+
+    if ($difficulty > 1) {
+      $difficulties[] = $difficulty - 1;
+    }
+    if ($difficulty < 5) {
+      $difficulties[] = $difficulty + 1;
     }
 
-    $st->execute();
+    // ELIMINAR niveles bloqueados de las dificultades candidatas
+    $difficulties = array_diff($difficulties, $lockedLevels);
+
+    error_log("Session $sessionId - Attempt 1: Searching in levels " . json_encode(array_values($difficulties)));
+
+    // Si todos los niveles cercanos están bloqueados, ir directo al fallback
+    if (!empty($difficulties)) {
+      $question = $this->searchQuestionInLevels($categoryId, $difficulties, $sessionId, $difficulty);
+      if ($question) {
+        error_log("Session $sessionId - Found question {$question->id} in attempt 1");
+        return $question;
+      }
+      error_log("Session $sessionId - No questions found in attempt 1");
+    } else {
+      error_log("Session $sessionId - All nearby levels are locked, skipping attempt 1");
+    }
+
+    // INTENTO 2: Si no se encontró pregunta, buscar en TODOS los niveles no bloqueados
+    $allLevels = [1, 2, 3, 4, 5];
+    $allAvailableLevels = array_diff($allLevels, $lockedLevels);
+
+    // Si todos los niveles están bloqueados, no hay preguntas disponibles
+    if (empty($allAvailableLevels)) {
+      error_log("Session $sessionId - All levels are locked, no questions available");
+      return null;
+    }
+
+    error_log("Session $sessionId - Attempt 2 (FALLBACK): Searching in all available levels " . json_encode(array_values($allAvailableLevels)));
+
+    $question = $this->searchQuestionInLevels($categoryId, $allAvailableLevels, $sessionId, $difficulty);
+
+    if ($question) {
+      error_log("Session $sessionId - Found question {$question->id} in attempt 2 (fallback)");
+    } else {
+      error_log("Session $sessionId - No questions found even in fallback - all questions answered or no verified questions");
+    }
+
+    return $question;
+  }
+
+  /**
+   * Método auxiliar para buscar pregunta en niveles específicos
+   */
+  private function searchQuestionInLevels(
+    ?int $categoryId,
+    array $difficulties,
+    int $sessionId,
+    int $preferredDifficulty
+  ): ?Question {
+    if (empty($difficulties)) {
+      return null;
+    }
+
+    // Generate named placeholders for IN clause
+    $diffPlaceholders = [];
+    foreach (array_values($difficulties) as $index => $diff) {
+      $diffPlaceholders[] = ':diff_' . $index;
+    }
+
+    // Construir condición de categoría (NULL = todas las categorías)
+    $categoryCondition = $categoryId ? "AND q.category_id = :c" : "";
+
+    $sql = "SELECT q.id, q.statement, q.difficulty, q.category_id, q.is_ai_generated, q.admin_verified
+            FROM questions q
+            WHERE q.is_active = 1
+              $categoryCondition
+              AND q.difficulty IN (" . implode(',', $diffPlaceholders) . ")
+              AND q.admin_verified = 1
+              AND q.id NOT IN (
+                SELECT pa.question_id
+                FROM player_answers pa
+                WHERE pa.session_id = :session_id
+              )
+            ORDER BY
+              CASE q.difficulty
+                WHEN :preferred_diff THEN 0
+                ELSE 1
+              END,
+              RAND()
+            LIMIT 1";
+
+    // Build complete params array with all named parameters
+    $params = [
+      ':session_id' => $sessionId,
+      ':preferred_diff' => $preferredDifficulty
+    ];
+
+    // Solo agregar category_id si no es null
+    if ($categoryId) {
+      $params[':c'] = $categoryId;
+    }
+
+    // Add dynamic difficulty parameters
+    foreach (array_values($difficulties) as $index => $diff) {
+      $params[':diff_' . $index] = $diff;
+    }
+
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute($params);
     $r = $st->fetch();
 
     return $r ? new Question(
@@ -639,7 +782,7 @@ final class QuestionRepository implements QuestionRepositoryInterface
 
     // Obtener pregunta
     $sqlQuestion = "SELECT q.id, q.statement, q.difficulty, q.category_id, qc.name as category_name,
-                           q.is_ai_generated, q.admin_verified, q.batch_id
+                          q.is_ai_generated, q.admin_verified, q.batch_id
                     FROM questions q
                     LEFT JOIN question_categories qc ON q.category_id = qc.id
                     WHERE q.id = :id";
@@ -653,7 +796,7 @@ final class QuestionRepository implements QuestionRepositoryInterface
 
     // Obtener opciones
     $sqlOptions = "SELECT id, content as text, is_correct FROM question_options
-                   WHERE question_id = :question_id ORDER BY id";
+                  WHERE question_id = :question_id ORDER BY id";
     $stOptions = $pdo->prepare($sqlOptions);
     $stOptions->execute([':question_id' => $questionId]);
     $options = $stOptions->fetchAll(\PDO::FETCH_ASSOC) ?: [];

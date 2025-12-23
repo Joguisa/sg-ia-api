@@ -69,16 +69,20 @@ $aiProvidersConfig = [
   ]
 ];
 
-// 2. CREAR SERVICIO MULTI-IA (fallover automático) ← NUEVO
-$generativeAi = new MultiAIService($aiProvidersConfig, $promptsRepo);
+// 2. OBTENER PROVEEDOR PREFERIDO DE BD
+$preferredProvider = $promptsRepo->getPreferredProvider();
 
-// 3. LOG del proveedor activo (para debugging)
+// 3. CREAR SERVICIO MULTI-IA (fallover automático) CON PROVEEDOR PREFERIDO
+$generativeAi = new MultiAIService($aiProvidersConfig, $promptsRepo, $preferredProvider);
+
+// 4. LOG del proveedor activo (para debugging)
+error_log("Proveedor IA preferido: {$preferredProvider}");
 error_log("Proveedor IA inicial: " . $generativeAi->getActiveProvider());
 
-$gameService = new GameService($sessionsRepo, $questionsRepo, $answersRepo, $playersRepo, $ai, $generativeAi);
+$gameService = new GameService($sessionsRepo, $questionsRepo, $answersRepo, $playersRepo, $ai, $generativeAi, $batchRepo);
 
 $playerCtrl   = new PlayerController($playersRepo);
-$gameCtrl     = new GameController($gameService);
+$gameCtrl     = new GameController($gameService, $sessionsRepo);
 $questionCtrl = new QuestionController($questionsRepo);
 $statsCtrl    = new StatisticsController($conn);
 $adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService, $batchRepo, $categoriesRepo);
@@ -136,6 +140,7 @@ $router->add('PUT','/admin/config/prompt', fn()=> $adminCtrl->updatePromptConfig
 // Category Management
 $router->add('GET','/admin/categories', fn()=> $categoryCtrl->list(), fn()=> $authMiddleware->validate());
 $router->add('POST','/admin/categories', fn()=> $adminCtrl->createCategory(), fn()=> $authMiddleware->validate());
+$router->add('PUT','/admin/categories/{id}', fn($p)=> $adminCtrl->updateCategory($p), fn()=> $authMiddleware->validate());
 $router->add('DELETE','/admin/categories/{id}', fn($p)=> $adminCtrl->deleteCategory($p), fn()=> $authMiddleware->validate());
 
 // Batch Generation
@@ -150,6 +155,9 @@ $router->add('POST','/admin/batch/import-csv', fn()=> $adminCtrl->importCSV(), f
 $router->add('GET','/admin/unverified', fn()=> $adminCtrl->getUnverifiedQuestions(), fn()=> $authMiddleware->validate());
 $router->add('PUT','/admin/explanation/{explanationId}', fn($p)=> $adminCtrl->editExplanation($p), fn()=> $authMiddleware->validate());
 $router->add('GET','/admin/batch-statistics', fn()=> $adminCtrl->getBatchStatistics(), fn()=> $authMiddleware->validate());
+
+// AI Providers
+$router->add('GET','/admin/available-providers', fn()=> $adminCtrl->getAvailableProviders(), fn()=> $authMiddleware->validate());
 
 // Dispatch
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';

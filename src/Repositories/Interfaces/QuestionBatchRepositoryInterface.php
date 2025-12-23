@@ -48,4 +48,13 @@ interface QuestionBatchRepositoryInterface
    * @return bool true si la actualización fue exitosa
    */
   public function updateStatus(int $batchId, string $status): bool;
+
+  /**
+   * Actualiza el proveedor de IA usado en un batch
+   *
+   * @param int $batchId ID del batch
+   * @param string $aiProvider Nombre del proveedor: 'gemini', 'groq', 'deepseek', 'fireworks'
+   * @return bool true si la actualización fue exitosa
+   */
+  public function updateAiProvider(int $batchId, string $aiProvider): bool;
 }

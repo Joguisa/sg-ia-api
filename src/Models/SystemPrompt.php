@@ -8,6 +8,8 @@ final class SystemPrompt {
     public readonly int $id,
     public readonly string $promptText,
     public readonly float $temperature,
-    public readonly bool $isActive
+    public readonly bool $isActive,
+    public readonly string $preferredAiProvider = 'auto',
+    public readonly int $maxQuestionsPerGame = 15
   ) {}
 }

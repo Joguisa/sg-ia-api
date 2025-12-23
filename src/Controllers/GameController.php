@@ -5,10 +5,14 @@ namespace Src\Controllers;
 use Src\Services\GameService;
 use Src\Services\ValidationService;
 use Src\Utils\Response;
+use Src\Repositories\Interfaces\SessionRepositoryInterface;
 
 final class GameController
 {
-  public function __construct(private GameService $game) {}
+  public function __construct(
+    private GameService $game,
+    private SessionRepositoryInterface $sessions
+  ) {}
 
   public function start(): void
   {
@@ -39,14 +43,17 @@ final class GameController
   public function next(): void
   {
     try {
-      $categoryId = (int)($_GET['category_id'] ?? 1);
+      // category_id es opcional: si es 0 o no existe, buscar en TODAS las categorías
+      $categoryIdParam = $_GET['category_id'] ?? 0;
+      $categoryId = $categoryIdParam > 0 ? (int)$categoryIdParam : null;
+
       $difficultyFloat = (float)($_GET['difficulty'] ?? 1.0);
       $sessionId = (int)($_GET['session_id'] ?? 0);
 
       // Redondear dificultad al entero más cercano para buscar preguntas
       $difficulty = (int)round($difficultyFloat);
 
-      if ($categoryId <= 0 || $difficulty < 1 || $difficulty > 5) {
+      if ($difficulty < 1 || $difficulty > 5) {
         throw new \InvalidArgumentException('Parámetros inválidos');
       }
 
@@ -55,8 +62,43 @@ final class GameController
       }
 
       $q = $this->game->nextQuestion($categoryId, $difficulty, $sessionId);
+
       if (!$q) {
-        Response::json(['ok' => false, 'error' => 'No hay preguntas verificadas disponibles'], 404);
+        // Verificar el estado de la sesión para diferenciar entre 'completed' y 'no questions'
+        $session = $this->sessions->get($sessionId);
+
+        if ($session && $session->status === 'completed') {
+          // Cuestionario completado exitosamente (alcanzó el límite de preguntas)
+          Response::json([
+            'ok' => true,
+            'completed' => true,
+            'message' => '¡Felicitaciones! Completaste el cuestionario'
+          ], 200);
+        } else {
+          // Sin preguntas disponibles pero NO porque alcanzó el límite
+          // Esto significa que completó todas las preguntas disponibles
+          $catLog = $categoryId ? "category $categoryId" : "all categories";
+          error_log("No questions available for session $sessionId, difficulty $difficulty, $catLog");
+
+          // Marcar sesión como completada
+          $this->sessions->updateProgress(
+            $sessionId,
+            $session->score,
+            $session->lives,
+            'completed',
+            $session->currentDifficulty
+          );
+
+          $message = $categoryId
+            ? '¡Felicitaciones! Completaste todas las preguntas disponibles de esta categoría'
+            : '¡Felicitaciones! Completaste todas las preguntas disponibles';
+
+          Response::json([
+            'ok' => true,
+            'completed' => true,
+            'message' => $message
+          ], 200);
+        }
       } else {
         Response::json(['ok' => true, 'question' => $q]);
       }

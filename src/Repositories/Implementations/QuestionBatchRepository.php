@@ -24,14 +24,15 @@ final class QuestionBatchRepository implements QuestionBatchRepositoryInterface
       throw new \InvalidArgumentException("batch_type debe ser 'ai_generated' o 'csv_imported'");
     }
 
-    $sql = "INSERT INTO question_batches (batch_name, batch_type, description, total_questions, status, imported_at)
-            VALUES (:batch_name, :batch_type, :description, :total_questions, 'pending', NOW())";
+    $sql = "INSERT INTO question_batches (batch_name, batch_type, description, ai_provider_used, total_questions, status, imported_at)
+            VALUES (:batch_name, :batch_type, :description, :ai_provider_used, :total_questions, 'pending', NOW())";
 
     $st = $this->db->pdo()->prepare($sql);
     $st->execute([
       ':batch_name' => $batchData['batch_name'],
       ':batch_type' => $batchData['batch_type'],
       ':description' => $batchData['description'] ?? null,
+      ':ai_provider_used' => $batchData['ai_provider_used'] ?? null,
       ':total_questions' => (int)$batchData['total_questions']
     ]);
 
@@ -82,6 +83,16 @@ final class QuestionBatchRepository implements QuestionBatchRepositoryInterface
     $st = $this->db->pdo()->prepare($sql);
     return $st->execute([
       ':status' => $status,
+      ':id' => $batchId
+    ]);
+  }
+
+  public function updateAiProvider(int $batchId, string $aiProvider): bool
+  {
+    $sql = "UPDATE question_batches SET ai_provider_used = :ai_provider WHERE id = :id";
+    $st = $this->db->pdo()->prepare($sql);
+    return $st->execute([
+      ':ai_provider' => $aiProvider,
       ':id' => $batchId
     ]);
   }
