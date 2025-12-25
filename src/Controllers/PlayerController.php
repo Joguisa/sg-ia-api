@@ -19,8 +19,22 @@ final class PlayerController {
       return;
     }
 
-    $p = $this->players->create($name, $age);
-    Response::json(['ok'=>true,'player'=>['id'=>$p->id,'name'=>$p->name,'age'=>$p->age]], 201);
+    // Usar getOrCreate para evitar duplicados
+    $p = $this->players->getOrCreate($name, $age);
+
+    // Verificar si el jugador ya existía
+    $wasExisting = $this->players->findByNameAndAge($name, $age)->id === $p->id;
+    $statusCode = $wasExisting ? 200 : 201;
+
+    Response::json([
+      'ok' => true,
+      'player' => [
+        'id' => $p->id,
+        'name' => $p->name,
+        'age' => $p->age
+      ],
+      'existing' => $wasExisting
+    ], $statusCode);
   }
 
   public function index(): void {

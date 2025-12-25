@@ -30,13 +30,40 @@ final class PlayerRepository implements PlayerRepositoryInterface {
     $stmt = $this->db->pdo()->prepare("SELECT id, name, age, created_at FROM players WHERE id=:id");
     $stmt->execute([':id' => $id]);
     $r = $stmt->fetch();
-    
+
     return $r ? new Player(
-        (int)$r['id'], 
-        $r['name'], 
-        (int)$r['age'], 
+        (int)$r['id'],
+        $r['name'],
+        (int)$r['age'],
         $r['created_at']
     ) : null;
+  }
+
+  public function findByNameAndAge(string $name, int $age): ?Player {
+    $stmt = $this->db->pdo()->prepare(
+        "SELECT id, name, age, created_at FROM players WHERE name = :name AND age = :age LIMIT 1"
+    );
+    $stmt->execute([':name' => $name, ':age' => $age]);
+    $r = $stmt->fetch();
+
+    return $r ? new Player(
+        (int)$r['id'],
+        $r['name'],
+        (int)$r['age'],
+        $r['created_at']
+    ) : null;
+  }
+
+  public function getOrCreate(string $name, int $age): Player {
+    // Intentar encontrar jugador existente
+    $existing = $this->findByNameAndAge($name, $age);
+
+    if ($existing) {
+        return $existing;  // Retornar jugador existente
+    }
+
+    // Si no existe, crear uno nuevo
+    return $this->create($name, $age);
   }
 
 }

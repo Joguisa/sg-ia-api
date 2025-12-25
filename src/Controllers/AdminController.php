@@ -904,6 +904,87 @@ final class AdminController {
   }
 
   /**
+   * Verificación masiva de preguntas
+   *
+   * Endpoint: POST /admin/questions/verify-bulk
+   * Body: { "verify_all_pending": true } O { "question_ids": [1, 2, 3...] }
+   *
+   * @return void
+   */
+  public function verifyBulk(): void
+  {
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+
+    try {
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok' => false, 'error' => 'Database connection failed'], 500);
+        return;
+      }
+
+      $verifiedCount = 0;
+
+      // Opción 1: Verificar todas las pendientes
+      if (isset($data['verify_all_pending']) && $data['verify_all_pending'] === true) {
+        $stmt = $pdo->prepare("UPDATE questions SET admin_verified = 1 WHERE admin_verified = 0");
+        $stmt->execute();
+        $verifiedCount = $stmt->rowCount();
+      }
+      // Opción 2: Verificar IDs específicos
+      elseif (isset($data['question_ids']) && is_array($data['question_ids']) && !empty($data['question_ids'])) {
+        $questionIds = array_map('intval', $data['question_ids']);
+        $placeholders = implode(',', array_fill(0, count($questionIds), '?'));
+
+        $stmt = $pdo->prepare("UPDATE questions SET admin_verified = 1 WHERE id IN ($placeholders) AND admin_verified = 0");
+        $stmt->execute($questionIds);
+        $verifiedCount = $stmt->rowCount();
+      }
+      // Opción 3: Verificar por batch_id
+      elseif (isset($data['batch_id']) && is_numeric($data['batch_id'])) {
+        $batchId = (int)$data['batch_id'];
+        $stmt = $pdo->prepare("UPDATE questions SET admin_verified = 1 WHERE batch_id = :batch_id AND admin_verified = 0");
+        $stmt->execute([':batch_id' => $batchId]);
+        $verifiedCount = $stmt->rowCount();
+
+        // Actualizar estado del batch
+        if ($this->batchRepo && $verifiedCount > 0) {
+          $this->batchRepo->updateStatus($batchId, 'complete');
+        }
+      }
+      else {
+        Response::json(['ok' => false, 'error' => 'Debe especificar verify_all_pending, question_ids o batch_id'], 400);
+        return;
+      }
+
+      // Registrar en logs
+      $logSQL = "INSERT INTO admin_system_logs (action, entity_table, entity_id, details, logged_at)
+                 VALUES (:action, :entity_table, :entity_id, :details, NOW())";
+      $logSt = $pdo->prepare($logSQL);
+      $logSt->execute([
+        ':action' => 'bulk_verify',
+        ':entity_table' => 'questions',
+        ':entity_id' => 0,
+        ':details' => json_encode([
+          'verified_count' => $verifiedCount,
+          'method' => isset($data['verify_all_pending']) ? 'all_pending' : (isset($data['batch_id']) ? 'by_batch' : 'by_ids')
+        ])
+      ]);
+
+      Response::json([
+        'ok' => true,
+        'message' => $verifiedCount > 0
+          ? "$verifiedCount pregunta(s) verificada(s) exitosamente"
+          : "No hay preguntas pendientes de verificación",
+        'verified_count' => $verifiedCount
+      ], 200);
+
+    } catch (\Exception $e) {
+      error_log("Error in bulk verification: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => 'Error al verificar preguntas: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
    * Importa preguntas desde archivo CSV
    *
    * Endpoint: POST /admin/batch/import-csv
@@ -1273,18 +1354,24 @@ final class AdminController {
         return;
       }
 
+      // Calcular estadísticas en tiempo real con JOIN
       $sql = "SELECT
-                id,
-                batch_name,
-                batch_type,
-                ai_provider_used,
-                total_questions,
-                verified_count,
-                ROUND((verified_count / NULLIF(total_questions, 0) * 100), 2) as verification_percent,
-                imported_at,
-                status
-              FROM question_batches
-              ORDER BY imported_at DESC";
+                qb.id,
+                qb.batch_name,
+                qb.batch_type,
+                qb.ai_provider_used,
+                COALESCE(COUNT(q.id), 0) as total_questions,
+                COALESCE(SUM(q.admin_verified = 1), 0) as verified_count,
+                CASE
+                  WHEN COUNT(q.id) > 0 THEN ROUND((SUM(q.admin_verified = 1) / COUNT(q.id) * 100), 2)
+                  ELSE 0
+                END as verification_percent,
+                qb.imported_at,
+                qb.status
+              FROM question_batches qb
+              LEFT JOIN questions q ON q.batch_id = qb.id
+              GROUP BY qb.id, qb.batch_name, qb.batch_type, qb.ai_provider_used, qb.imported_at, qb.status
+              ORDER BY qb.imported_at DESC";
 
       $st = $pdo->prepare($sql);
       $st->execute();

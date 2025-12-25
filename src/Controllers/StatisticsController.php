@@ -114,6 +114,7 @@ final class StatisticsController {
 
       $stmt = $pdo->prepare("
         SELECT
+          ROW_NUMBER() OVER (ORDER BY MAX(gs.score) DESC) AS `rank`,
           p.id AS player_id,
           p.name AS player_name,
           p.age,
@@ -125,7 +126,7 @@ final class StatisticsController {
         LEFT JOIN game_sessions gs ON gs.player_id = p.id
         LEFT JOIN player_answers pa ON pa.session_id = gs.id
         GROUP BY p.id, p.name, p.age
-        ORDER BY MAX(gs.score) DESC
+        ORDER BY `rank` ASC
         LIMIT 10
       ");
       $stmt->execute();
@@ -134,7 +135,7 @@ final class StatisticsController {
       Response::json([
         'ok' => true,
         'leaderboard' => array_map(fn($row) => [
-          'rank' => 0, // Se asignará después
+          'rank' => (int)$row['rank'],
           'player_id' => (int)$row['player_id'],
           'player_name' => $row['player_name'],
           'age' => (int)$row['age'],
