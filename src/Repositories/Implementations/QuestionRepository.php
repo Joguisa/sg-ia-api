@@ -112,14 +112,34 @@ final class QuestionRepository implements QuestionRepositoryInterface
    * @param int $difficulty Nivel de dificultad preferido
    * @param int $sessionId ID de la sesión actual
    * @param array $lockedLevels Array de niveles bloqueados [1, 2, 3]
+   * @param array|null $roomFilters Filtros de sala ['categories' => [1,2,3], 'difficulties' => [1,2,3]]
    * @return Question|null Pregunta aleatoria o null si no hay disponibles
    */
   public function getRandomExcludingAnsweredAndLockedLevels(
     ?int $categoryId,
     int $difficulty,
     int $sessionId,
-    array $lockedLevels
+    array $lockedLevels,
+    ?array $roomFilters = null
   ): ?Question {
+    // Aplicar filtros de sala si existen
+    $allowedCategories = null;
+    $allowedDifficulties = null;
+
+    if ($roomFilters !== null) {
+      // Si la sala tiene filtro de categorías, usarlo (ignora $categoryId del jugador)
+      if (!empty($roomFilters['categories'])) {
+        $allowedCategories = $roomFilters['categories'];
+        error_log("Session $sessionId - Room filter: categories " . json_encode($allowedCategories));
+      }
+
+      // Si la sala tiene filtro de dificultades, aplicarlo
+      if (!empty($roomFilters['difficulties'])) {
+        $allowedDifficulties = $roomFilters['difficulties'];
+        error_log("Session $sessionId - Room filter: difficulties " . json_encode($allowedDifficulties));
+      }
+    }
+
     // ESTRATEGIA DE FALLBACK CON 2 INTENTOS
     // INTENTO 1: Buscar en el nivel actual y adyacentes (no bloqueados)
     $difficulties = [$difficulty];
@@ -134,11 +154,16 @@ final class QuestionRepository implements QuestionRepositoryInterface
     // ELIMINAR niveles bloqueados de las dificultades candidatas
     $difficulties = array_diff($difficulties, $lockedLevels);
 
+    // Si hay filtro de dificultades de sala, intersectar
+    if ($allowedDifficulties !== null) {
+      $difficulties = array_intersect($difficulties, $allowedDifficulties);
+    }
+
     error_log("Session $sessionId - Attempt 1: Searching in levels " . json_encode(array_values($difficulties)));
 
     // Si todos los niveles cercanos están bloqueados, ir directo al fallback
     if (!empty($difficulties)) {
-      $question = $this->searchQuestionInLevels($categoryId, $difficulties, $sessionId, $difficulty);
+      $question = $this->searchQuestionInLevels($categoryId, $difficulties, $sessionId, $difficulty, $allowedCategories);
       if ($question) {
         error_log("Session $sessionId - Found question {$question->id} in attempt 1");
         return $question;
@@ -149,7 +174,7 @@ final class QuestionRepository implements QuestionRepositoryInterface
     }
 
     // INTENTO 2: Si no se encontró pregunta, buscar en TODOS los niveles no bloqueados
-    $allLevels = [1, 2, 3, 4, 5];
+    $allLevels = $allowedDifficulties ?? [1, 2, 3, 4, 5];
     $allAvailableLevels = array_diff($allLevels, $lockedLevels);
 
     // Si todos los niveles están bloqueados, no hay preguntas disponibles
@@ -160,7 +185,7 @@ final class QuestionRepository implements QuestionRepositoryInterface
 
     error_log("Session $sessionId - Attempt 2 (FALLBACK): Searching in all available levels " . json_encode(array_values($allAvailableLevels)));
 
-    $question = $this->searchQuestionInLevels($categoryId, $allAvailableLevels, $sessionId, $difficulty);
+    $question = $this->searchQuestionInLevels($categoryId, $allAvailableLevels, $sessionId, $difficulty, $allowedCategories);
 
     if ($question) {
       error_log("Session $sessionId - Found question {$question->id} in attempt 2 (fallback)");
@@ -173,12 +198,19 @@ final class QuestionRepository implements QuestionRepositoryInterface
 
   /**
    * Método auxiliar para buscar pregunta en niveles específicos
+   *
+   * @param int|null $categoryId Categoría específica del jugador (puede ser ignorada por filtro de sala)
+   * @param array $difficulties Niveles de dificultad permitidos
+   * @param int $sessionId ID de la sesión
+   * @param int $preferredDifficulty Dificultad preferida para ordenar resultados
+   * @param array|null $allowedCategories Categorías permitidas por la sala (null = todas)
    */
   private function searchQuestionInLevels(
     ?int $categoryId,
     array $difficulties,
     int $sessionId,
-    int $preferredDifficulty
+    int $preferredDifficulty,
+    ?array $allowedCategories = null
   ): ?Question {
     if (empty($difficulties)) {
       return null;
@@ -190,8 +222,22 @@ final class QuestionRepository implements QuestionRepositoryInterface
       $diffPlaceholders[] = ':diff_' . $index;
     }
 
-    // Construir condición de categoría (NULL = todas las categorías)
-    $categoryCondition = $categoryId ? "AND q.category_id = :c" : "";
+    // Construir condición de categoría
+    // Prioridad: filtro de sala > categoría del jugador > todas las categorías
+    $categoryCondition = "";
+    $categoryPlaceholders = [];
+
+    if ($allowedCategories !== null && !empty($allowedCategories)) {
+      // Filtro de sala tiene prioridad
+      foreach (array_values($allowedCategories) as $index => $catId) {
+        $categoryPlaceholders[] = ':cat_' . $index;
+      }
+      $categoryCondition = "AND q.category_id IN (" . implode(',', $categoryPlaceholders) . ")";
+    } elseif ($categoryId !== null) {
+      // Categoría específica del jugador
+      $categoryCondition = "AND q.category_id = :c";
+    }
+    // Si ambos son null, no hay filtro de categoría (todas las categorías)
 
     $sql = "SELECT q.id, q.statement, q.difficulty, q.category_id, q.is_ai_generated, q.admin_verified
             FROM questions q
@@ -218,8 +264,12 @@ final class QuestionRepository implements QuestionRepositoryInterface
       ':preferred_diff' => $preferredDifficulty
     ];
 
-    // Solo agregar category_id si no es null
-    if ($categoryId) {
+    // Agregar parámetros de categoría según el caso
+    if ($allowedCategories !== null && !empty($allowedCategories)) {
+      foreach (array_values($allowedCategories) as $index => $catId) {
+        $params[':cat_' . $index] = $catId;
+      }
+    } elseif ($categoryId !== null) {
       $params[':c'] = $categoryId;
     }
 

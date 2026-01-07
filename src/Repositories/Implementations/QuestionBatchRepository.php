@@ -24,8 +24,14 @@ final class QuestionBatchRepository implements QuestionBatchRepositoryInterface
       throw new \InvalidArgumentException("batch_type debe ser 'ai_generated' o 'csv_imported'");
     }
 
-    $sql = "INSERT INTO question_batches (batch_name, batch_type, description, ai_provider_used, total_questions, status, imported_at)
-            VALUES (:batch_name, :batch_type, :description, :ai_provider_used, :total_questions, 'pending', NOW())";
+    // Validar language si se proporciona
+    $language = $batchData['language'] ?? 'es';
+    if (!in_array($language, ['es', 'en'])) {
+      $language = 'es';
+    }
+
+    $sql = "INSERT INTO question_batches (batch_name, batch_type, description, ai_provider_used, total_questions, language, status, imported_at)
+            VALUES (:batch_name, :batch_type, :description, :ai_provider_used, :total_questions, :language, 'pending', NOW())";
 
     $st = $this->db->pdo()->prepare($sql);
     $st->execute([
@@ -33,7 +39,8 @@ final class QuestionBatchRepository implements QuestionBatchRepositoryInterface
       ':batch_type' => $batchData['batch_type'],
       ':description' => $batchData['description'] ?? null,
       ':ai_provider_used' => $batchData['ai_provider_used'] ?? null,
-      ':total_questions' => (int)$batchData['total_questions']
+      ':total_questions' => (int)$batchData['total_questions'],
+      ':language' => $language
     ]);
 
     return (int)$this->db->pdo()->lastInsertId();

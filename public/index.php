@@ -8,9 +8,9 @@ use Src\Middleware\CorsMiddleware;
 use Src\Middleware\AuthMiddleware;
 use Dotenv\Dotenv;
 
-use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository,ErrorLogRepository,QuestionBatchRepository};
-use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController,CategoryController,LogController};
-use Src\Services\{GameService,AIEngine,AuthService};
+use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository,ErrorLogRepository,QuestionBatchRepository,RoomRepository};
+use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController,CategoryController,LogController,RoomController};
+use Src\Services\{GameService,AIEngine,AuthService,RoomService,ExportService};
 use Src\Services\AI\GeminiAIService;
 use Src\Services\AI\GroqAIService;
 use Src\Services\AI\DeepSeekAIService;
@@ -42,6 +42,7 @@ $promptsRepo   = new SystemPromptRepository($conn);
 $categoriesRepo = new CategoryRepository($conn);
 $errorLogRepo  = new ErrorLogRepository($conn);
 $batchRepo     = new QuestionBatchRepository($conn);
+$roomRepo      = new RoomRepository($conn);
 $ai            = new AIEngine();
 
 // $generativeAi = null;
@@ -79,7 +80,9 @@ $generativeAi = new MultiAIService($aiProvidersConfig, $promptsRepo, $preferredP
 error_log("Proveedor IA preferido: {$preferredProvider}");
 error_log("Proveedor IA inicial: " . $generativeAi->getActiveProvider());
 
-$gameService = new GameService($sessionsRepo, $questionsRepo, $answersRepo, $playersRepo, $ai, $generativeAi, $batchRepo);
+$gameService = new GameService($sessionsRepo, $questionsRepo, $answersRepo, $playersRepo, $ai, $generativeAi, $batchRepo, $roomRepo);
+$roomService = new RoomService($roomRepo);
+$exportService = new ExportService();
 
 $playerCtrl   = new PlayerController($playersRepo);
 $gameCtrl     = new GameController($gameService, $sessionsRepo);
@@ -88,6 +91,7 @@ $statsCtrl    = new StatisticsController($conn);
 $adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService, $batchRepo, $categoriesRepo);
 $categoryCtrl = new CategoryController($categoriesRepo);
 $logCtrl      = new LogController($errorLogRepo);
+$roomCtrl     = new RoomController($roomService, $exportService);
 $authService  = new AuthService($conn->pdo());
 $authCtrl     = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authService);
@@ -159,6 +163,29 @@ $router->add('GET','/admin/batch-statistics', fn()=> $adminCtrl->getBatchStatist
 
 // AI Providers
 $router->add('GET','/admin/available-providers', fn()=> $adminCtrl->getAvailableProviders(), fn()=> $authMiddleware->validate());
+
+// Room Management (Admin Protected)
+$router->add('POST','/admin/rooms', fn($p)=> $roomCtrl->create($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/rooms', fn($p)=> $roomCtrl->list($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/rooms/{id}', fn($p)=> $roomCtrl->get($p), fn()=> $authMiddleware->validate());
+$router->add('PUT','/admin/rooms/{id}', fn($p)=> $roomCtrl->update($p), fn()=> $authMiddleware->validate());
+$router->add('DELETE','/admin/rooms/{id}', fn($p)=> $roomCtrl->delete($p), fn()=> $authMiddleware->validate());
+$router->add('PATCH','/admin/rooms/{id}/status', fn($p)=> $roomCtrl->updateStatus($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/rooms/{id}/players', fn($p)=> $roomCtrl->getPlayers($p), fn()=> $authMiddleware->validate());
+
+// Room Statistics (Admin Protected)
+$router->add('GET','/admin/rooms/{id}/stats', fn($p)=> $roomCtrl->getStats($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/rooms/{id}/stats/players', fn($p)=> $roomCtrl->getPlayerStats($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/rooms/{id}/stats/questions', fn($p)=> $roomCtrl->getQuestionStats($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/rooms/{id}/stats/categories', fn($p)=> $roomCtrl->getCategoryStats($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/rooms/{id}/stats/analysis', fn($p)=> $roomCtrl->getQuestionAnalysis($p), fn()=> $authMiddleware->validate());
+
+// Room Export (Admin Protected)
+$router->add('GET','/admin/rooms/{id}/export/pdf', fn($p)=> $roomCtrl->exportPdf($p), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/rooms/{id}/export/excel', fn($p)=> $roomCtrl->exportExcel($p), fn()=> $authMiddleware->validate());
+
+// Room Public Endpoints (for players)
+$router->add('GET','/rooms/validate/{code}', fn($p)=> $roomCtrl->validateCode($p));
 
 // Dispatch
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';

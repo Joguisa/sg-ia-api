@@ -5,6 +5,7 @@ namespace Src\Services;
 use Src\Repositories\Interfaces\{SessionRepositoryInterface, QuestionRepositoryInterface, AnswerRepositoryInterface};
 use Src\Repositories\Interfaces\PlayerRepositoryInterface;
 use Src\Repositories\Interfaces\QuestionBatchRepositoryInterface;
+use Src\Repositories\Interfaces\RoomRepositoryInterface;
 use Src\Services\AI\GenerativeAIInterface;
 
 final class GameService
@@ -16,7 +17,8 @@ final class GameService
     private PlayerRepositoryInterface $players,
     private AIEngine $ai,
     private ?GenerativeAIInterface $generativeAi = null,
-    private ?QuestionBatchRepositoryInterface $batchRepo = null
+    private ?QuestionBatchRepositoryInterface $batchRepo = null,
+    private ?RoomRepositoryInterface $roomRepo = null
   ) {}
 
   /**
@@ -127,7 +129,15 @@ final class GameService
     return $this->generativeAi;
   }
 
-  public function startSession(int $playerId, float $startDifficulty = 1.0): array
+  /**
+   * Inicia una nueva sesión de juego.
+   *
+   * @param int $playerId ID del jugador
+   * @param float $startDifficulty Dificultad inicial (1.0-5.0)
+   * @param string|null $roomCode Código de sala opcional
+   * @return array Datos de la sesión iniciada
+   */
+  public function startSession(int $playerId, float $startDifficulty = 1.0, ?string $roomCode = null): array
   {
     if ($startDifficulty < 1.0 || $startDifficulty > 5.0) {
       throw new \RangeError("Dificultad inicial debe estar entre 1.0 y 5.0");
@@ -136,11 +146,71 @@ final class GameService
     $player = $this->players->find($playerId);
     if (!$player) throw new \RuntimeException('Jugador no existe');
 
-    $gs = $this->sessions->start($playerId, $startDifficulty);
-    return [
+    $roomId = null;
+    $roomData = null;
+
+    // Si se proporciona código de sala, validar y obtener room_id
+    if ($roomCode !== null && $this->roomRepo !== null) {
+      $room = $this->roomRepo->getByCode(strtoupper($roomCode));
+
+      if (!$room) {
+        throw new \RuntimeException('Código de sala no válido');
+      }
+
+      if ($room->status !== 'active') {
+        throw new \RuntimeException('La sala no está activa');
+      }
+
+      // Verificar que no exceda el máximo de jugadores
+      $activePlayers = $this->roomRepo->countActivePlayers($room->id);
+      if ($activePlayers >= $room->maxPlayers) {
+        throw new \RuntimeException('La sala está llena');
+      }
+
+      $roomId = $room->id;
+      $roomData = [
+        'id' => $room->id,
+        'room_code' => $room->roomCode,
+        'name' => $room->name,
+        'filter_categories' => $room->filterCategories,
+        'filter_difficulties' => $room->filterDifficulties
+      ];
+    }
+
+    $gs = $this->sessions->start($playerId, $startDifficulty, $roomId);
+
+    $response = [
       'session_id' => $gs->id,
       'current_difficulty' => $gs->currentDifficulty,
       'status' => $gs->status
+    ];
+
+    if ($roomData !== null) {
+      $response['room'] = $roomData;
+    }
+
+    return $response;
+  }
+
+  /**
+   * Obtiene los filtros de sala para una sesión.
+   * Retorna null si la sesión no tiene sala asociada.
+   */
+  private function getRoomFilters(int $sessionId): ?array
+  {
+    $session = $this->sessions->get($sessionId);
+    if (!$session || !$session->roomId || !$this->roomRepo) {
+      return null;
+    }
+
+    $room = $this->roomRepo->get($session->roomId);
+    if (!$room) {
+      return null;
+    }
+
+    return [
+      'categories' => $room->filterCategories,
+      'difficulties' => $room->filterDifficulties
     ];
   }
 
@@ -191,18 +261,25 @@ final class GameService
     // NUEVO: Calcular niveles bloqueados
     $lockedLevels = $this->getLockedLevels($sessionId, $maxQuestions);
 
+    // Obtener filtros de sala si la sesión está asociada a una
+    $roomFilters = $this->getRoomFilters($sessionId);
+
     // DEBUG: Log para entender qué está pasando
     $catLog = $categoryId ? "Category: $categoryId" : "Category: ALL";
     error_log("GameService::nextQuestion - Session: $sessionId, Difficulty: $difficulty, $catLog");
     error_log("Total answered: $totalAnswered / $maxQuestions");
     error_log("Locked levels: " . json_encode($lockedLevels));
+    if ($roomFilters) {
+      error_log("Room filters applied: " . json_encode($roomFilters));
+    }
 
-    // Buscar pregunta excluyendo respondidas Y niveles bloqueados
+    // Buscar pregunta excluyendo respondidas Y niveles bloqueados, aplicando filtros de sala
     $q = $this->questions->getRandomExcludingAnsweredAndLockedLevels(
       $categoryId,
       $difficulty,
       $sessionId,
-      $lockedLevels
+      $lockedLevels,
+      $roomFilters
     );
 
     error_log("Question found: " . ($q ? "ID {$q->id}" : "NULL"));
@@ -240,16 +317,17 @@ final class GameService
    * @param int $categoryId ID de la categoría
    * @param int $difficulty Nivel de dificultad
    * @param int|null $batchId ID del batch al que pertenece la pregunta (opcional)
+   * @param string $language Idioma de la pregunta ('es' o 'en')
    * @return array|null Datos de la pregunta generada o null si falla
    */
-  public function generateAndSaveQuestion(int $categoryId, int $difficulty, ?int $batchId = null): ?array
+  public function generateAndSaveQuestion(int $categoryId, int $difficulty, ?int $batchId = null, string $language = 'es'): ?array
   {
     try {
       // Obtener nombre de la categoría (asumiendo que existe, si no lanzará excepción)
       $categoryName = $this->getCategoryName($categoryId);
 
       // Generar pregunta con IA
-      $generatedData = $this->generativeAi->generateQuestion($categoryName, $difficulty);
+      $generatedData = $this->generativeAi->generateQuestion($categoryName, $difficulty, $language);
 
       // Capturar información del proveedor de IA
       $providerUsed = $this->generativeAi->getActiveProviderName();

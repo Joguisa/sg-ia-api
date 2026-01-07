@@ -47,10 +47,13 @@ final class GroqAIService implements GenerativeAIInterface
         return new Client($config);
     }
 
-    public function generateQuestion(string $topic, int $difficulty): array
+    public function generateQuestion(string $topic, int $difficulty, string $language = 'es'): array
     {
-        $prompt = $this->buildSystemPrompt($topic, $difficulty);
+        $prompt = $this->buildSystemPrompt($topic, $difficulty, $language);
         $temperature = $this->getTemperature();
+        $systemContent = $language === 'es'
+            ? 'Eres un experto oncólogo generador de preguntas educativas.'
+            : 'You are an expert oncologist educational question generator.';
 
         try {
             $response = $this->client->post($this->apiEndpoint, [
@@ -59,7 +62,7 @@ final class GroqAIService implements GenerativeAIInterface
                     'messages' => [
                         [
                             'role' => 'system',
-                            'content' => 'Eres un experto oncólogo generador de preguntas educativas.'
+                            'content' => $systemContent
                         ],
                         [
                             'role' => 'user',
@@ -80,7 +83,9 @@ final class GroqAIService implements GenerativeAIInterface
             }
 
             $groqText = $body['choices'][0]['message']['content'];
-            return $this->parseAIResponse($groqText);
+            $result = $this->parseAIResponse($groqText);
+            $result['language'] = $language;
+            return $result;
         } catch (GuzzleException $e) {
             if ($this->isRateLimitError($e)) {
                 throw new \RuntimeException('RATE_LIMIT_EXCEEDED: ' . $e->getMessage());
@@ -133,18 +138,27 @@ final class GroqAIService implements GenerativeAIInterface
             strpos($e->getMessage(), 'rate limit') !== false;
     }
 
-    private function buildSystemPrompt(string $topic, int $difficulty): string
+    private function buildSystemPrompt(string $topic, int $difficulty, string $language = 'es'): string
     {
-        $difficultyDesc = match ($difficulty) {
+        $isSpanish = $language === 'es';
+
+        $difficultyDesc = $isSpanish ? match ($difficulty) {
             1 => 'muy básico (conocimientos fundamentales)',
             2 => 'básico (conceptos clave)',
             3 => 'intermedio (aplicación clínica)',
             4 => 'avanzado (diagnóstico diferencial)',
             5 => 'experto (casos complejos y guías internacionales)',
             default => 'intermedio'
+        } : match ($difficulty) {
+            1 => 'very basic (fundamental knowledge)',
+            2 => 'basic (key concepts)',
+            3 => 'intermediate (clinical application)',
+            4 => 'advanced (differential diagnosis)',
+            5 => 'expert (complex cases and international guidelines)',
+            default => 'intermediate'
         };
 
-        $templatePrompt = $this->getPromptTemplate();
+        $templatePrompt = $this->getPromptTemplate($language);
 
         return str_replace(
             ['{topic}', '{difficulty}', '{difficulty_desc}'],
@@ -153,18 +167,23 @@ final class GroqAIService implements GenerativeAIInterface
         );
     }
 
-    private function getPromptTemplate(): string
+    private function getPromptTemplate(string $language = 'es'): string
     {
         if (!$this->prompts) {
-            return $this->getDefaultPromptTemplate();
+            return $this->getDefaultPromptTemplate($language);
         }
 
         $prompt = $this->prompts->getActive();
         if (!$prompt) {
-            return $this->getDefaultPromptTemplate();
+            return $this->getDefaultPromptTemplate($language);
         }
 
-        return $prompt->promptText;
+        $basePrompt = $prompt->promptText;
+        $langInstruction = $language === 'es'
+            ? "\n\nIMPORTANT: Generate ALL content (statement, options, explanations) in SPANISH."
+            : "\n\nIMPORTANT: Generate ALL content (statement, options, explanations) in ENGLISH.";
+
+        return $basePrompt . $langInstruction;
     }
 
     private function getTemperature(): float
@@ -181,8 +200,33 @@ final class GroqAIService implements GenerativeAIInterface
         return $prompt->temperature;
     }
 
-    private function getDefaultPromptTemplate(): string
+    private function getDefaultPromptTemplate(string $language = 'es'): string
     {
+        if ($language === 'en') {
+            return <<<'EOT'
+        You are an expert oncologist and health educator specialized in Colon Cancer.
+        Generate EXACTLY 1 multiple choice question about {topic} for difficulty level {difficulty} ({difficulty_desc}).
+
+        Educational context: Colon Cancer literacy in Ecuador
+        Standards: Based on Ecuador MSP Guidelines and WHO
+
+        CRITICAL INSTRUCTIONS:
+        1. Generate ONLY valid JSON, no markdown or comments
+        2. EXACT structure: { "statement": "...", "options": [{"text": "...", "is_correct": bool}], "explanation_correct": "...", "explanation_incorrect": "...", "source_ref": "..." }
+        3. Include exactly 4 options
+        4. Only one option should be correct (is_correct: true)
+        5. The statement should be clear and concise (100-300 characters)
+        6. Balanced options, none obviously incorrect
+        7. Generate TWO different explanations:
+           - explanation_correct: Positive feedback when the student answers correctly (50-100 words)
+           - explanation_incorrect: Educational explanation useful for those who made mistakes (50-100 words)
+        8. source_ref: reference to "Ecuador MSP Guidelines", "WHO", or medical literature
+        9. ALL content MUST be in ENGLISH
+
+        STRICT VALID JSON (no markdown):
+        EOT;
+        }
+
         return <<<'EOT'
         Eres un experto oncólogo y educador sanitario especializado en Cáncer de Colon.
         Genera EXACTAMENTE 1 pregunta de opción múltiple sobre {topic} para nivel de dificultad {difficulty} ({difficulty_desc}).
@@ -201,6 +245,7 @@ final class GroqAIService implements GenerativeAIInterface
            - explanation_correct: Retroalimentación positiva y refuerzo del concepto cuando el estudiante responde correctamente (50-100 palabras)
            - explanation_incorrect: Explicación educativa general sobre por qué la respuesta correcta es la adecuada, útil para quien se equivocó (50-100 palabras)
         8. source_ref: referencia a "Guías MSP Ecuador", "OMS", o literatura médica
+        9. TODO el contenido DEBE estar en ESPAÑOL
 
         JSON VÁLIDO ESTRICTO (sin markdown):
         EOT;

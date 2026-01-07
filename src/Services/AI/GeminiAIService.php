@@ -44,23 +44,25 @@ final class GeminiAIService implements GenerativeAIInterface
   }
 
   /**
-   * Genera una pregunta automáticamente basada en tema y dificultad
+   * Genera una pregunta automáticamente basada en tema, dificultad e idioma
    *
    * @param string $topic Tema o categoría (ej: "Cáncer de Colon")
    * @param int $difficulty Nivel de dificultad (1-5)
+   * @param string $language Idioma de la pregunta ('es' = español, 'en' = inglés)
    * @return array Estructura: [
    *   'statement' => string,
    *   'options' => array,
    *   'correctOption' => int,
    *   'explanation_correct' => string,
    *   'explanation_incorrect' => string,
-   *   'source_ref' => string
+   *   'source_ref' => string,
+   *   'language' => string
    * ]
    * @throws RuntimeException Si la API falla o retorna JSON inválido
    */
-  public function generateQuestion(string $topic, int $difficulty): array
+  public function generateQuestion(string $topic, int $difficulty, string $language = 'es'): array
   {
-    $prompt = $this->buildSystemPrompt($topic, $difficulty);
+    $prompt = $this->buildSystemPrompt($topic, $difficulty, $language);
     $temperature = $this->getTemperature();
 
     try {
@@ -97,7 +99,9 @@ final class GeminiAIService implements GenerativeAIInterface
       }
 
       $geminiText = $body['candidates'][0]['content']['parts'][0]['text'];
-      return $this->parseGeminiResponse($geminiText);
+      $result = $this->parseGeminiResponse($geminiText);
+      $result['language'] = $language; // Include language in response
+      return $result;
     } catch (GuzzleException $e) {
       // Detectar específicamente el error de límite de uso (429 o RESOURCE_EXHAUSTED)
       $statusCode = $e->getCode();
@@ -185,24 +189,34 @@ final class GeminiAIService implements GenerativeAIInterface
    *
    * @param string $topic Tema médico
    * @param int $difficulty Nivel (1-5)
+   * @param string $language Idioma ('es' o 'en')
    * @return string Prompt formateado
    */
-  private function buildSystemPrompt(string $topic, int $difficulty): string
+  private function buildSystemPrompt(string $topic, int $difficulty, string $language = 'es'): string
   {
-    $difficultyDesc = match ($difficulty) {
+    $isSpanish = $language === 'es';
+
+    $difficultyDesc = $isSpanish ? match ($difficulty) {
       1 => 'muy básico (conocimientos fundamentales)',
       2 => 'básico (conceptos clave)',
       3 => 'intermedio (aplicación clínica)',
       4 => 'avanzado (diagnóstico diferencial)',
       5 => 'experto (casos complejos y guías internacionales)',
       default => 'intermedio'
+    } : match ($difficulty) {
+      1 => 'very basic (fundamental knowledge)',
+      2 => 'basic (key concepts)',
+      3 => 'intermediate (clinical application)',
+      4 => 'advanced (differential diagnosis)',
+      5 => 'expert (complex cases and international guidelines)',
+      default => 'intermediate'
     };
 
-    $templatePrompt = $this->getPromptTemplate();
+    $templatePrompt = $this->getPromptTemplate($language);
 
     return str_replace(
-      ['{topic}', '{difficulty}', '{difficulty_desc}'],
-      [$topic, (string)$difficulty, $difficultyDesc],
+      ['{topic}', '{difficulty}', '{difficulty_desc}', '{language}'],
+      [$topic, (string)$difficulty, $difficultyDesc, $isSpanish ? 'Spanish' : 'English'],
       $templatePrompt
     );
   }
@@ -210,20 +224,27 @@ final class GeminiAIService implements GenerativeAIInterface
   /**
    * Obtiene el template de prompt de la BD, con fallback a valor por defecto
    *
+   * @param string $language Idioma ('es' o 'en')
    * @return string Template del prompt
    */
-  private function getPromptTemplate(): string
+  private function getPromptTemplate(string $language = 'es'): string
   {
     if (!$this->prompts) {
-      return $this->getDefaultPromptTemplate();
+      return $this->getDefaultPromptTemplate($language);
     }
 
     $prompt = $this->prompts->getActive();
     if (!$prompt) {
-      return $this->getDefaultPromptTemplate();
+      return $this->getDefaultPromptTemplate($language);
     }
 
-    return $prompt->promptText;
+    // If using database prompt, append language instruction
+    $basePrompt = $prompt->promptText;
+    $langInstruction = $language === 'es'
+      ? "\n\nIMPORTANT: Generate ALL content (statement, options, explanations) in SPANISH."
+      : "\n\nIMPORTANT: Generate ALL content (statement, options, explanations) in ENGLISH.";
+
+    return $basePrompt . $langInstruction;
   }
 
   /**
@@ -248,10 +269,36 @@ final class GeminiAIService implements GenerativeAIInterface
   /**
    * Template por defecto (fallback si BD no disponible)
    *
+   * @param string $language Idioma ('es' o 'en')
    * @return string Template del prompt
    */
-  private function getDefaultPromptTemplate(): string
+  private function getDefaultPromptTemplate(string $language = 'es'): string
   {
+    if ($language === 'en') {
+      return <<<'EOT'
+    You are an expert oncologist and health educator specialized in Colon Cancer.
+    Generate EXACTLY 1 multiple choice question about {topic} for difficulty level {difficulty} ({difficulty_desc}).
+
+    Educational context: Colon Cancer literacy in Ecuador
+    Standards: Based on Ecuador MSP Guidelines and WHO
+
+    CRITICAL INSTRUCTIONS:
+    1. Generate ONLY valid JSON, no markdown or comments
+    2. EXACT structure: { "statement": "...", "options": [{"text": "...", "is_correct": bool}], "explanation_correct": "...", "explanation_incorrect": "...", "source_ref": "..." }
+    3. Include exactly 4 options
+    4. Only one option should be correct (is_correct: true)
+    5. The statement should be clear and concise (100-300 characters)
+    6. Balanced options, none obviously incorrect
+    7. Generate TWO different explanations:
+       - explanation_correct: Positive feedback and concept reinforcement when the student answers correctly (50-100 words)
+       - explanation_incorrect: General educational explanation about why the correct answer is appropriate, useful for those who made mistakes (50-100 words)
+    8. source_ref: reference to "Ecuador MSP Guidelines", "WHO", or medical literature
+    9. ALL content MUST be in ENGLISH
+
+    STRICT VALID JSON (no markdown):
+    EOT;
+    }
+
     return <<<'EOT'
     Eres un experto oncólogo y educador sanitario especializado en Cáncer de Colon.
     Genera EXACTAMENTE 1 pregunta de opción múltiple sobre {topic} para nivel de dificultad {difficulty} ({difficulty_desc}).
@@ -270,6 +317,7 @@ final class GeminiAIService implements GenerativeAIInterface
        - explanation_correct: Retroalimentación positiva y refuerzo del concepto cuando el estudiante responde correctamente (50-100 palabras)
        - explanation_incorrect: Explicación educativa general sobre por qué la respuesta correcta es la adecuada, útil para quien se equivocó (50-100 palabras)
     8. source_ref: referencia a "Guías MSP Ecuador", "OMS", o literatura médica
+    9. TODO el contenido DEBE estar en ESPAÑOL
 
     JSON VÁLIDO ESTRICTO (sin markdown):
     EOT;

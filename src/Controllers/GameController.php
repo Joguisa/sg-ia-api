@@ -14,6 +14,15 @@ final class GameController
     private SessionRepositoryInterface $sessions
   ) {}
 
+  /**
+   * Inicia una nueva sesión de juego.
+   *
+   * Body: {
+   *   "player_id": 1,
+   *   "start_difficulty": 1.0,  // opcional
+   *   "room_code": "ABC123"     // opcional - código de sala
+   * }
+   */
   public function start(): void
   {
     try {
@@ -22,12 +31,13 @@ final class GameController
 
       $playerId = (int)$data['player_id'];
       $startDiff = isset($data['start_difficulty']) ? (float)$data['start_difficulty'] : 1.0;
+      $roomCode = isset($data['room_code']) && !empty($data['room_code']) ? trim($data['room_code']) : null;
 
       if ($playerId <= 0) {
         throw new \InvalidArgumentException('player_id debe ser > 0');
       }
 
-      $out = $this->game->startSession($playerId, $startDiff);
+      $out = $this->game->startSession($playerId, $startDiff, $roomCode);
       Response::json(['ok' => true] + $out, 201);
     } catch (\JsonException $e) {
       Response::json(['ok' => false, 'error' => 'JSON inválido'], 400);

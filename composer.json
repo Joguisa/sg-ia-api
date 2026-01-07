@@ -8,7 +8,9 @@
         "firebase/php-jwt": "^6.11",
         "guzzlehttp/guzzle": "^7.10",
         "paragonie/certainty": "^3.0",
-        "vlucas/phpdotenv": "^5.6"
+        "vlucas/phpdotenv": "^5.6",
+        "tecnickcom/tcpdf": "^6.7",
+        "phpoffice/phpspreadsheet": "^1.29"
     },
     "autoload": {
       "psr-4": {

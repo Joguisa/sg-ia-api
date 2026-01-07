@@ -7,23 +7,23 @@ use Src\Repositories\Interfaces\SessionRepositoryInterface;
 final class SessionRepository implements SessionRepositoryInterface {
   public function __construct(private Connection $db) {}
 
-  public function start(int $playerId, float $difficulty): GameSession {
+  public function start(int $playerId, float $difficulty, ?int $roomId = null): GameSession {
     // Validar rango
     if ($difficulty < 1.00 || $difficulty > 5.00) {
       throw new \RangeError("Dificultad debe estar entre 1.00 y 5.00");
     }
 
     $st = $this->db->pdo()->prepare(
-      "INSERT INTO game_sessions(player_id, current_difficulty) VALUES(:p, :d)"
+      "INSERT INTO game_sessions(player_id, room_id, current_difficulty) VALUES(:p, :r, :d)"
     );
-    $st->execute([':p' => $playerId, ':d' => $difficulty]);
+    $st->execute([':p' => $playerId, ':r' => $roomId, ':d' => $difficulty]);
     $id = (int)$this->db->pdo()->lastInsertId();
-    return new GameSession($id, $playerId, $difficulty, 'active');
+    return new GameSession($id, $playerId, $roomId, $difficulty, 'active');
   }
 
   public function get(int $id): ?GameSession {
     $st = $this->db->pdo()->prepare(
-      "SELECT id, player_id, current_difficulty, score, lives, status
+      "SELECT id, player_id, room_id, current_difficulty, score, lives, status
        FROM game_sessions WHERE id=:id"
     );
     $st->execute([':id' => $id]);
@@ -31,6 +31,7 @@ final class SessionRepository implements SessionRepositoryInterface {
     return $r ? new GameSession(
       (int)$r['id'],
       (int)$r['player_id'],
+      $r['room_id'] ? (int)$r['room_id'] : null,
       (float)$r['current_difficulty'],
       $r['status'],
       (int)$r['score'],

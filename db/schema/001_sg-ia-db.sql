@@ -26,6 +26,12 @@ Ej de ejecución  :
 22/01/2025           v2.3: Unificación de migraciones. Se integra columna 'max_questions_per_game'        JGUILLEN
                      directamente en tabla 'system_prompts' para limitar longitud de partida
                      vía configuración (Range: 5-100).
+
+06/01/2026           v3.0: Sistema de Salas. Se añade tabla 'game_rooms' para gestión de                 JGUILLEN
+                     grupos/clases de estudiantes. Se modifica 'game_sessions' para asociar
+                     sesiones a salas (room_id). Se añade columna 'default_language' en
+                     'system_prompts' y 'language' en 'questions' y 'question_batches'
+                     para soporte multi-idioma (es/en).
 ******************************************************************************************************************************/
 
 DROP DATABASE IF EXISTS sg_ia_db;
@@ -68,6 +74,7 @@ CREATE TABLE system_prompts (
   temperature DECIMAL(3,2) NOT NULL DEFAULT 0.7,
   preferred_ai_provider VARCHAR(50) NOT NULL DEFAULT 'auto',
   max_questions_per_game INT UNSIGNED NOT NULL DEFAULT 15 COMMENT 'Máximo de preguntas por juego (5-100)',
+  default_language ENUM('es', 'en') NOT NULL DEFAULT 'es' COMMENT 'Idioma por defecto para generación de preguntas',
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -85,12 +92,14 @@ CREATE TABLE question_batches (
   batch_type ENUM('ai_generated', 'csv_imported', 'manual_entry') NOT NULL,
   description VARCHAR(255) NULL,
   ai_provider_used VARCHAR(50) NULL,
+  language ENUM('es', 'en') NOT NULL DEFAULT 'es' COMMENT 'Idioma de las preguntas del lote',
   total_questions INT UNSIGNED NOT NULL DEFAULT 0,
   verified_count INT UNSIGNED NOT NULL DEFAULT 0,
   imported_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   status ENUM('pending', 'partial', 'complete') NOT NULL DEFAULT 'pending',
   KEY ix_qbatch_type_status (batch_type, status),
-  KEY ix_qbatch_imported_at (imported_at)
+  KEY ix_qbatch_imported_at (imported_at),
+  KEY ix_qbatch_language (language)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
@@ -106,6 +115,30 @@ CREATE TABLE players (
   KEY ix_players_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- =========================================================
+-- 3.1 SALAS DE JUEGO (Grupos/Clases)
+-- =========================================================
+
+CREATE TABLE game_rooms (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  room_code VARCHAR(8) NOT NULL UNIQUE COMMENT 'Código único de sala (ej: ABC123)',
+  name VARCHAR(100) NOT NULL,
+  description VARCHAR(255) NULL,
+  admin_id INT UNSIGNED NOT NULL,
+  filter_categories JSON NULL COMMENT 'IDs de categorías permitidas, null = todas',
+  filter_difficulties JSON NULL COMMENT 'Niveles permitidos [1,2,3,4,5], null = todos',
+  max_players INT UNSIGNED NOT NULL DEFAULT 50,
+  status ENUM('active', 'paused', 'closed') NOT NULL DEFAULT 'active',
+  started_at TIMESTAMP NULL,
+  ended_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_rooms_admin FOREIGN KEY (admin_id) REFERENCES admins(id),
+  UNIQUE KEY uk_room_code (room_code),
+  KEY ix_rooms_status (status),
+  KEY ix_rooms_admin (admin_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE questions (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   statement TEXT NOT NULL,
@@ -116,6 +149,7 @@ CREATE TABLE questions (
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   is_ai_generated BOOLEAN DEFAULT 0,
   admin_verified BOOLEAN DEFAULT 1,
+  language ENUM('es', 'en') NOT NULL DEFAULT 'es' COMMENT 'Idioma de la pregunta',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT ck_questions_difficulty CHECK (difficulty BETWEEN 1 AND 5),
@@ -125,7 +159,8 @@ CREATE TABLE questions (
   KEY ix_q_cat_diff_active (category_id, difficulty, is_active),
   KEY ix_q_diff_active (difficulty, is_active),
   KEY ix_questions_ai_verified (is_ai_generated, admin_verified),
-  KEY ix_questions_batch_verified (batch_id, admin_verified)
+  KEY ix_questions_batch_verified (batch_id, admin_verified),
+  KEY ix_questions_language (language)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
@@ -163,6 +198,7 @@ CREATE TABLE question_options (
 CREATE TABLE game_sessions (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   player_id INT UNSIGNED NOT NULL,
+  room_id INT UNSIGNED NULL COMMENT 'Sala de juego asociada (NULL = juego libre)',
   current_difficulty DECIMAL(3,2) NOT NULL DEFAULT 1.00,
   score INT UNSIGNED NOT NULL DEFAULT 0,
   lives TINYINT UNSIGNED NOT NULL DEFAULT 3,
@@ -173,8 +209,10 @@ CREATE TABLE game_sessions (
   CONSTRAINT ck_gs_diff CHECK (current_difficulty >= 1.00 AND current_difficulty <= 5.00),
   CONSTRAINT ck_gs_lives CHECK (lives >= 0 AND lives <= 9),
   CONSTRAINT fk_gs_player FOREIGN KEY (player_id) REFERENCES players(id),
+  CONSTRAINT fk_gs_room FOREIGN KEY (room_id) REFERENCES game_rooms(id) ON DELETE SET NULL,
   KEY ix_gs_player_status (player_id, status, started_at),
-  KEY idx_player_current_difficulty (player_id, current_difficulty)
+  KEY idx_player_current_difficulty (player_id, current_difficulty),
+  KEY ix_gs_room_status (room_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE player_answers (
@@ -308,6 +346,7 @@ SELECT
   qb.batch_name,
   qb.batch_type,
   qb.ai_provider_used,
+  qb.language,
   qb.total_questions,
   qb.verified_count,
   (qb.total_questions - qb.verified_count) AS pending_count,
@@ -316,6 +355,84 @@ SELECT
   qb.status
 FROM question_batches qb
 ORDER BY qb.imported_at DESC;
+
+-- =========================================================
+-- 7.1 VISTAS DE ESTADÍSTICAS DE SALA
+-- =========================================================
+
+CREATE VIEW v_room_statistics AS
+SELECT
+  gr.id AS room_id,
+  gr.room_code,
+  gr.name AS room_name,
+  gr.status AS room_status,
+  COUNT(DISTINCT gs.id) AS total_sessions,
+  COUNT(DISTINCT gs.player_id) AS unique_players,
+  COUNT(pa.id) AS total_answers,
+  ROUND(AVG(pa.is_correct) * 100, 2) AS avg_accuracy,
+  ROUND(AVG(pa.time_taken_seconds), 2) AS avg_time_sec,
+  MAX(gs.score) AS highest_score,
+  ROUND(AVG(gs.score), 2) AS avg_score,
+  gr.created_at AS room_created_at
+FROM game_rooms gr
+LEFT JOIN game_sessions gs ON gs.room_id = gr.id
+LEFT JOIN player_answers pa ON pa.session_id = gs.id
+GROUP BY gr.id, gr.room_code, gr.name, gr.status, gr.created_at;
+
+CREATE VIEW v_room_player_stats AS
+SELECT
+  gr.id AS room_id,
+  gr.room_code,
+  p.id AS player_id,
+  p.name AS player_name,
+  p.age AS player_age,
+  COUNT(DISTINCT gs.id) AS sessions_played,
+  MAX(gs.score) AS high_score,
+  ROUND(AVG(gs.score), 2) AS avg_score,
+  COUNT(pa.id) AS total_answers,
+  ROUND(AVG(pa.is_correct) * 100, 2) AS accuracy_percent,
+  ROUND(AVG(pa.time_taken_seconds), 2) AS avg_time_sec
+FROM game_rooms gr
+JOIN game_sessions gs ON gs.room_id = gr.id
+JOIN players p ON p.id = gs.player_id
+LEFT JOIN player_answers pa ON pa.session_id = gs.id
+GROUP BY gr.id, gr.room_code, p.id, p.name, p.age;
+
+CREATE VIEW v_room_question_stats AS
+SELECT
+  gr.id AS room_id,
+  gr.room_code,
+  q.id AS question_id,
+  q.statement,
+  qc.name AS category_name,
+  q.difficulty,
+  COUNT(pa.id) AS times_answered,
+  SUM(CASE WHEN pa.is_correct = 1 THEN 1 ELSE 0 END) AS correct_count,
+  SUM(CASE WHEN pa.is_correct = 0 THEN 1 ELSE 0 END) AS error_count,
+  ROUND((SUM(CASE WHEN pa.is_correct = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(pa.id), 0)) * 100, 2) AS error_rate,
+  ROUND(AVG(pa.time_taken_seconds), 2) AS avg_time_sec
+FROM game_rooms gr
+JOIN game_sessions gs ON gs.room_id = gr.id
+JOIN player_answers pa ON pa.session_id = gs.id
+JOIN questions q ON q.id = pa.question_id
+JOIN question_categories qc ON qc.id = q.category_id
+GROUP BY gr.id, gr.room_code, q.id, q.statement, qc.name, q.difficulty;
+
+CREATE VIEW v_room_category_stats AS
+SELECT
+  gr.id AS room_id,
+  gr.room_code,
+  qc.id AS category_id,
+  qc.name AS category_name,
+  COUNT(pa.id) AS total_answers,
+  ROUND(AVG(pa.is_correct) * 100, 2) AS accuracy_percent,
+  ROUND(AVG(pa.time_taken_seconds), 2) AS avg_time_sec
+FROM game_rooms gr
+JOIN game_sessions gs ON gs.room_id = gr.id
+JOIN player_answers pa ON pa.session_id = gs.id
+JOIN questions q ON q.id = pa.question_id
+JOIN question_categories qc ON qc.id = q.category_id
+GROUP BY gr.id, gr.room_code, qc.id, qc.name;
 
 -- =========================================================
 -- 8. DATOS SEMILLA

@@ -555,7 +555,7 @@ final class AdminController {
    * Generar preguntas en batch usando IA
    *
    * Endpoint: POST /admin/generate-batch
-   * Body: { "quantity": 5, "category_id": 1, "difficulty": 3 }
+   * Body: { "quantity": 5, "category_id": 1, "difficulty": 3, "language": "es" }
    *
    * @return void
    */
@@ -576,6 +576,7 @@ final class AdminController {
     $quantity = (int)$data['quantity'];
     $categoryId = (int)$data['category_id'];
     $difficulty = (int)$data['difficulty'];
+    $language = $data['language'] ?? 'es';
 
     if ($quantity <= 0 || $quantity > 50) {
       Response::json(['ok'=>false,'error'=>'Quantity must be between 1 and 50'], 400);
@@ -592,22 +593,30 @@ final class AdminController {
       return;
     }
 
+    // Validar idioma
+    if (!in_array($language, ['es', 'en'])) {
+      Response::json(['ok'=>false,'error'=>'Language must be "es" or "en"'], 400);
+      return;
+    }
+
     try {
       // Crear batch antes de generar preguntas
-      $batchName = "IA-Gen-" . date('Y-m-d_H-i-s');
+      $langLabel = $language === 'es' ? 'ES' : 'EN';
+      $batchName = "IA-Gen-{$langLabel}-" . date('Y-m-d_H-i-s');
       $batchId = $this->batchRepo->create([
         'batch_name' => $batchName,
         'batch_type' => 'ai_generated',
-        'description' => "Generación automática: {$quantity} preguntas, dificultad {$difficulty}",
-        'total_questions' => $quantity
+        'description' => "Generación automática: {$quantity} preguntas, dificultad {$difficulty}, idioma {$language}",
+        'total_questions' => $quantity,
+        'language' => $language
       ]);
 
       $generated = [];
       $failed = 0;
 
       for ($i = 0; $i < $quantity; $i++) {
-        // Pasar batchId para asociar pregunta con batch y capturar proveedor
-        $question = $this->gameService->generateAndSaveQuestion($categoryId, $difficulty, $batchId);
+        // Pasar batchId y language para asociar pregunta con batch y capturar proveedor
+        $question = $this->gameService->generateAndSaveQuestion($categoryId, $difficulty, $batchId, $language);
 
         if ($question) {
           $generated[] = $question;
@@ -624,6 +633,7 @@ final class AdminController {
         'ok' => true,
         'batch_id' => $batchId,
         'batch_name' => $batchName,
+        'language' => $language,
         'generated' => count($generated),
         'failed' => $failed,
         'questions' => $generated,

@@ -76,7 +76,7 @@ final class MultiAIService implements GenerativeAIInterface
         $this->currentProviderIndex = 0;
     }
 
-    public function generateQuestion(string $topic, int $difficulty): array
+    public function generateQuestion(string $topic, int $difficulty, string $language = 'es'): array
     {
         $initialIndex = $this->currentProviderIndex;
         $this->wasFailover = false;
@@ -89,7 +89,7 @@ final class MultiAIService implements GenerativeAIInterface
             $providerName = get_class($provider);
 
             try {
-                $result = $provider->generateQuestion($topic, $difficulty);
+                $result = $provider->generateQuestion($topic, $difficulty, $language);
 
                 // Detect if failover occurred
                 if ($this->currentProviderIndex !== $initialIndex) {
