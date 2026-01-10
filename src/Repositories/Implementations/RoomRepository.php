@@ -40,13 +40,19 @@ final class RoomRepository implements RoomRepositoryInterface {
     ?string $description = null,
     ?array $filterCategories = null,
     ?array $filterDifficulties = null,
-    int $maxPlayers = 50
+    int $maxPlayers = 50,
+    string $language = 'es'
   ): GameRoom {
     $roomCode = $this->generateUniqueCode();
 
+    // Validate language
+    if (!in_array($language, ['es', 'en'])) {
+      $language = 'es';
+    }
+
     $st = $this->db->pdo()->prepare(
-      "INSERT INTO game_rooms (room_code, name, description, admin_id, filter_categories, filter_difficulties, max_players)
-       VALUES (:code, :name, :desc, :admin, :cats, :diffs, :max)"
+      "INSERT INTO game_rooms (room_code, name, description, admin_id, filter_categories, filter_difficulties, max_players, language)
+       VALUES (:code, :name, :desc, :admin, :cats, :diffs, :max, :lang)"
     );
 
     $st->execute([
@@ -56,7 +62,8 @@ final class RoomRepository implements RoomRepositoryInterface {
       ':admin' => $adminId,
       ':cats' => $filterCategories ? json_encode($filterCategories) : null,
       ':diffs' => $filterDifficulties ? json_encode($filterDifficulties) : null,
-      ':max' => $maxPlayers
+      ':max' => $maxPlayers,
+      ':lang' => $language
     ]);
 
     $id = (int)$this->db->pdo()->lastInsertId();
@@ -70,6 +77,7 @@ final class RoomRepository implements RoomRepositoryInterface {
       $filterCategories,
       $filterDifficulties,
       $maxPlayers,
+      $language,
       'active'
     );
   }
@@ -77,7 +85,7 @@ final class RoomRepository implements RoomRepositoryInterface {
   public function get(int $id): ?GameRoom {
     $st = $this->db->pdo()->prepare(
       "SELECT id, room_code, name, description, admin_id, filter_categories,
-              filter_difficulties, max_players, status, started_at, ended_at,
+              filter_difficulties, max_players, language, status, started_at, ended_at,
               created_at, updated_at
        FROM game_rooms WHERE id = :id"
     );
@@ -90,7 +98,7 @@ final class RoomRepository implements RoomRepositoryInterface {
   public function getByCode(string $roomCode): ?GameRoom {
     $st = $this->db->pdo()->prepare(
       "SELECT id, room_code, name, description, admin_id, filter_categories,
-              filter_difficulties, max_players, status, started_at, ended_at,
+              filter_difficulties, max_players, language, status, started_at, ended_at,
               created_at, updated_at
        FROM game_rooms WHERE room_code = :code"
     );
@@ -103,7 +111,7 @@ final class RoomRepository implements RoomRepositoryInterface {
   public function getAll(): array {
     $st = $this->db->pdo()->query(
       "SELECT id, room_code, name, description, admin_id, filter_categories,
-              filter_difficulties, max_players, status, started_at, ended_at,
+              filter_difficulties, max_players, language, status, started_at, ended_at,
               created_at, updated_at
        FROM game_rooms ORDER BY created_at DESC"
     );
@@ -118,7 +126,7 @@ final class RoomRepository implements RoomRepositoryInterface {
   public function getAllByAdmin(int $adminId): array {
     $st = $this->db->pdo()->prepare(
       "SELECT id, room_code, name, description, admin_id, filter_categories,
-              filter_difficulties, max_players, status, started_at, ended_at,
+              filter_difficulties, max_players, language, status, started_at, ended_at,
               created_at, updated_at
        FROM game_rooms WHERE admin_id = :admin ORDER BY created_at DESC"
     );
@@ -132,7 +140,7 @@ final class RoomRepository implements RoomRepositoryInterface {
   }
 
   public function update(int $id, array $data): bool {
-    $allowedFields = ['name', 'description', 'filter_categories', 'filter_difficulties', 'max_players'];
+    $allowedFields = ['name', 'description', 'filter_categories', 'filter_difficulties', 'max_players', 'language'];
     $updates = [];
     $params = [':id' => $id];
 
@@ -144,6 +152,11 @@ final class RoomRepository implements RoomRepositoryInterface {
         if (in_array($field, ['filter_categories', 'filter_difficulties', 'filterCategories', 'filterDifficulties'])) {
           $dbField = str_contains($field, 'Categories') ? 'filter_categories' : 'filter_difficulties';
           $value = $value ? json_encode($value) : null;
+        }
+
+        // Validate language
+        if ($field === 'language' && !in_array($value, ['es', 'en'])) {
+          $value = 'es';
         }
 
         $updates[] = "$dbField = :$field";
@@ -325,6 +338,7 @@ final class RoomRepository implements RoomRepositoryInterface {
       $r['filter_categories'] ? json_decode($r['filter_categories'], true) : null,
       $r['filter_difficulties'] ? json_decode($r['filter_difficulties'], true) : null,
       (int)$r['max_players'],
+      $r['language'] ?? 'es',
       $r['status'],
       $r['started_at'],
       $r['ended_at'],

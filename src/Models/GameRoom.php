@@ -11,6 +11,7 @@ final class GameRoom {
     public ?array $filterCategories,
     public ?array $filterDifficulties,
     public int $maxPlayers = 50,
+    public string $language = 'es',
     public string $status = 'active',
     public ?string $startedAt = null,
     public ?string $endedAt = null,

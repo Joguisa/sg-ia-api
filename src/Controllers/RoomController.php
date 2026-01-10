@@ -52,7 +52,8 @@ final class RoomController {
         $data['description'] ?? null,
         $data['filter_categories'] ?? null,
         $data['filter_difficulties'] ?? null,
-        (int)($data['max_players'] ?? 50)
+        (int)($data['max_players'] ?? 50),
+        $data['language'] ?? 'es'
       );
 
       Response::json([
@@ -470,13 +471,20 @@ final class RoomController {
       $questionStats = $this->roomService->getRoomQuestionStats($roomId);
       $categoryStats = $this->roomService->getRoomCategoryStats($roomId);
 
+      // Get question analysis (Top 5 hardest and easiest)
+      $questionAnalysis = [
+        'top_hardest' => $this->roomService->getTopHardestQuestions($roomId),
+        'top_easiest' => $this->roomService->getTopEasiestQuestions($roomId)
+      ];
+
       // Generate PDF
       $pdfContent = $this->exportService->generateRoomPdf(
         $room,
         $stats,
         $playerStats,
         $questionStats,
-        $categoryStats
+        $categoryStats,
+        $questionAnalysis
       );
 
       // Send PDF response
@@ -524,13 +532,20 @@ final class RoomController {
       $questionStats = $this->roomService->getRoomQuestionStats($roomId);
       $categoryStats = $this->roomService->getRoomCategoryStats($roomId);
 
+      // Get question analysis (Top 5 hardest and easiest)
+      $questionAnalysis = [
+        'top_hardest' => $this->roomService->getTopHardestQuestions($roomId),
+        'top_easiest' => $this->roomService->getTopEasiestQuestions($roomId)
+      ];
+
       // Generate Excel
       $excelContent = $this->exportService->generateRoomExcel(
         $room,
         $stats,
         $playerStats,
         $questionStats,
-        $categoryStats
+        $categoryStats,
+        $questionAnalysis
       );
 
       // Send Excel response

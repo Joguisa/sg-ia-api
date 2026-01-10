@@ -6,9 +6,10 @@ use Src\Utils\Router;
 use Src\Utils\Response;
 use Src\Middleware\CorsMiddleware;
 use Src\Middleware\AuthMiddleware;
+use Src\Middleware\SuperAdminMiddleware;
 use Dotenv\Dotenv;
 
-use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository,ErrorLogRepository,QuestionBatchRepository,RoomRepository};
+use Src\Repositories\Implementations\{PlayerRepository,QuestionRepository,SessionRepository,AnswerRepository,SystemPromptRepository,CategoryRepository,ErrorLogRepository,QuestionBatchRepository,RoomRepository,AdminRepository};
 use Src\Controllers\{PlayerController,GameController,QuestionController,StatisticsController,AdminController,AuthController,CategoryController,LogController,RoomController};
 use Src\Services\{GameService,AIEngine,AuthService,RoomService,ExportService};
 use Src\Services\AI\GeminiAIService;
@@ -43,6 +44,7 @@ $categoriesRepo = new CategoryRepository($conn);
 $errorLogRepo  = new ErrorLogRepository($conn);
 $batchRepo     = new QuestionBatchRepository($conn);
 $roomRepo      = new RoomRepository($conn);
+$adminRepo     = new AdminRepository($conn);
 $ai            = new AIEngine();
 
 // $generativeAi = null;
@@ -88,13 +90,14 @@ $playerCtrl   = new PlayerController($playersRepo);
 $gameCtrl     = new GameController($gameService, $sessionsRepo);
 $questionCtrl = new QuestionController($questionsRepo);
 $statsCtrl    = new StatisticsController($conn);
-$adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService, $batchRepo, $categoriesRepo);
+$adminCtrl    = new AdminController($questionsRepo, $promptsRepo, $gameService, $batchRepo, $categoriesRepo, $adminRepo);
 $categoryCtrl = new CategoryController($categoriesRepo);
 $logCtrl      = new LogController($errorLogRepo);
 $roomCtrl     = new RoomController($roomService, $exportService);
 $authService  = new AuthService($conn->pdo());
 $authCtrl     = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authService);
+$superAdminMiddleware = new SuperAdminMiddleware($authService);
 
 // Router
 $router = new Router();
@@ -184,8 +187,18 @@ $router->add('GET','/admin/rooms/{id}/stats/analysis', fn($p)=> $roomCtrl->getQu
 $router->add('GET','/admin/rooms/{id}/export/pdf', fn($p)=> $roomCtrl->exportPdf($p), fn()=> $authMiddleware->validate());
 $router->add('GET','/admin/rooms/{id}/export/excel', fn($p)=> $roomCtrl->exportExcel($p), fn()=> $authMiddleware->validate());
 
+
 // Room Public Endpoints (for players)
 $router->add('GET','/rooms/validate/{code}', fn($p)=> $roomCtrl->validateCode($p));
+
+// Admin Management (Superadmin Protected for write operations)
+$router->add('GET','/admin/admins', fn()=> $adminCtrl->indexAdmins(), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/admins/{id}', fn($p)=> $adminCtrl->showAdmin($p), fn()=> $authMiddleware->validate());
+$router->add('POST','/admin/admins', fn()=> $adminCtrl->storeAdmin(), fn()=> $superAdminMiddleware->validate());
+$router->add('PUT','/admin/admins/{id}', fn($p)=> $adminCtrl->updateAdmin($p), fn()=> $superAdminMiddleware->validate());
+$router->add('DELETE','/admin/admins/{id}', fn($p)=> $adminCtrl->destroyAdmin($p), fn()=> $superAdminMiddleware->validate());
+$router->add('PATCH','/admin/admins/{id}/status', fn($p)=> $adminCtrl->toggleAdminStatus($p), fn()=> $superAdminMiddleware->validate());
+
 
 // Dispatch
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';

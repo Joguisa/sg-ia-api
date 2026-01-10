@@ -36,7 +36,12 @@ final class AuthService {
     }
 
     try {
-      $stmt = $this->pdo->prepare('SELECT id, email, password_hash FROM admins WHERE email = ?');
+      // Check if admin exists and is active
+      $stmt = $this->pdo->prepare(
+        'SELECT id, email, password_hash, role, is_active 
+         FROM admins 
+         WHERE email = ? AND is_active = 1'
+      );
       $stmt->execute([$email]);
       $admin = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -50,9 +55,10 @@ final class AuthService {
 
       $now = time();
       $payload = [
+        'id' => $admin['id'],
         'sub' => $admin['id'],
         'email' => $admin['email'],
-        'role' => 'admin',
+        'role' => $admin['role'], // Include actual role (admin or superadmin)
         'iat' => $now,
         'exp' => $now + $this->tokenExpiry
       ];

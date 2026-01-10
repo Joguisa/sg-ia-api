@@ -20,7 +20,8 @@ final class RoomService
     ?string $description = null,
     ?array $filterCategories = null,
     ?array $filterDifficulties = null,
-    int $maxPlayers = 50
+    int $maxPlayers = 50,
+    string $language = 'es'
   ): array {
     // Validaciones
     if (empty(trim($name))) {
@@ -40,13 +41,19 @@ final class RoomService
       }
     }
 
+    // Validar idioma
+    if (!in_array($language, ['es', 'en'])) {
+      $language = 'es';
+    }
+
     $room = $this->rooms->create(
       $name,
       $adminId,
       $description,
       $filterCategories,
       $filterDifficulties,
-      $maxPlayers
+      $maxPlayers,
+      $language
     );
 
     return $this->formatRoomResponse($room);
@@ -289,6 +296,7 @@ final class RoomService
       'filter_categories' => $room->filterCategories,
       'filter_difficulties' => $room->filterDifficulties,
       'max_players' => $room->maxPlayers,
+      'language' => $room->language,
       'status' => $room->status,
       'started_at' => $room->startedAt,
       'ended_at' => $room->endedAt,

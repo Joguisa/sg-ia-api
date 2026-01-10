@@ -23,6 +23,7 @@ final class ExportService {
    * @param array $playerStats Player statistics
    * @param array $questionStats Question statistics
    * @param array $categoryStats Category statistics
+   * @param array $questionAnalysis Top hardest and easiest questions
    * @return string PDF content as binary string
    */
   public function generateRoomPdf(
@@ -30,7 +31,8 @@ final class ExportService {
     array $stats,
     array $playerStats,
     array $questionStats,
-    array $categoryStats
+    array $categoryStats,
+    array $questionAnalysis = []
   ): string {
     // Create new PDF document
     $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
@@ -104,6 +106,22 @@ final class ExportService {
       $pdf->Ln(5);
     }
 
+    // Question Analysis Section (Top 5 hardest and easiest)
+    if (!empty($questionAnalysis['top_hardest']) || !empty($questionAnalysis['top_easiest'])) {
+      if ($pdf->GetY() > 180) {
+        $pdf->AddPage();
+      } else {
+        $pdf->Ln(10);
+      }
+
+      $pdf->SetFont('helvetica', 'B', 14);
+      $pdf->SetTextColor(102, 126, 234);
+      $pdf->Cell(0, 10, 'Análisis de Preguntas', 0, 1, 'L');
+
+      $this->addQuestionAnalysisSection($pdf, $questionAnalysis);
+      $pdf->Ln(5);
+    }
+
     // Question Statistics Section (Top 10 errors)
     if (!empty($questionStats)) {
       // Check if we need a new page (if less than 60mm available)
@@ -154,6 +172,7 @@ final class ExportService {
    * @param array $playerStats Player statistics
    * @param array $questionStats Question statistics
    * @param array $categoryStats Category statistics
+   * @param array $questionAnalysis Top hardest and easiest questions
    * @return string Excel content as binary string
    */
   public function generateRoomExcel(
@@ -161,7 +180,8 @@ final class ExportService {
     array $stats,
     array $playerStats,
     array $questionStats,
-    array $categoryStats
+    array $categoryStats,
+    array $questionAnalysis = []
   ): string {
     $spreadsheet = new Spreadsheet();
 
@@ -317,6 +337,86 @@ final class ExportService {
       }
     }
 
+    // Sheet 5: Question Analysis (Top 5 hardest and easiest)
+    if (!empty($questionAnalysis['top_hardest']) || !empty($questionAnalysis['top_easiest'])) {
+      $analysisSheet = $spreadsheet->createSheet();
+      $analysisSheet->setTitle('Análisis');
+
+      $row = 1;
+
+      // Top 5 Hardest
+      if (!empty($questionAnalysis['top_hardest'])) {
+        $analysisSheet->setCellValue('A' . $row, 'Top 5 Preguntas Más Difíciles');
+        $analysisSheet->mergeCells('A' . $row . ':D' . $row);
+        $analysisSheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(12);
+        $analysisSheet->getStyle('A' . $row)->getFont()->getColor()->setRGB('E74C3C');
+        $row++;
+
+        // Headers
+        $headers = ['#', 'Pregunta', 'Respuestas', 'Tasa Éxito (%)'];
+        $col = 'A';
+        foreach ($headers as $header) {
+          $analysisSheet->setCellValue($col . $row, $header);
+          $analysisSheet->getStyle($col . $row)->getFont()->setBold(true);
+          $analysisSheet->getStyle($col . $row)->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('E74C3C');
+          $analysisSheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FFFFFF');
+          $col++;
+        }
+        $row++;
+
+        // Data
+        foreach ($questionAnalysis['top_hardest'] as $index => $question) {
+          $analysisSheet->setCellValue('A' . $row, $index + 1);
+          $analysisSheet->setCellValue('B' . $row, $question['statement'] ?? 'N/A');
+          $analysisSheet->setCellValue('C' . $row, $question['times_answered'] ?? 0);
+          $analysisSheet->setCellValue('D' . $row, (float)($question['success_rate'] ?? 0));
+          $row++;
+        }
+
+        $row += 2; // Space between sections
+      }
+
+      // Top 5 Easiest
+      if (!empty($questionAnalysis['top_easiest'])) {
+        $analysisSheet->setCellValue('A' . $row, 'Top 5 Preguntas Más Fáciles');
+        $analysisSheet->mergeCells('A' . $row . ':D' . $row);
+        $analysisSheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(12);
+        $analysisSheet->getStyle('A' . $row)->getFont()->getColor()->setRGB('27AE60');
+        $row++;
+
+        // Headers
+        $headers = ['#', 'Pregunta', 'Respuestas', 'Tasa Éxito (%)'];
+        $col = 'A';
+        foreach ($headers as $header) {
+          $analysisSheet->setCellValue($col . $row, $header);
+          $analysisSheet->getStyle($col . $row)->getFont()->setBold(true);
+          $analysisSheet->getStyle($col . $row)->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('27AE60');
+          $analysisSheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FFFFFF');
+          $col++;
+        }
+        $row++;
+
+        // Data
+        foreach ($questionAnalysis['top_easiest'] as $index => $question) {
+          $analysisSheet->setCellValue('A' . $row, $index + 1);
+          $analysisSheet->setCellValue('B' . $row, $question['statement'] ?? 'N/A');
+          $analysisSheet->setCellValue('C' . $row, $question['times_answered'] ?? 0);
+          $analysisSheet->setCellValue('D' . $row, (float)($question['success_rate'] ?? 0));
+          $row++;
+        }
+      }
+
+      // Column widths
+      $analysisSheet->getColumnDimension('A')->setWidth(5);
+      $analysisSheet->getColumnDimension('B')->setWidth(60);
+      $analysisSheet->getColumnDimension('C')->setWidth(15);
+      $analysisSheet->getColumnDimension('D')->setWidth(18);
+    }
+
     // Set first sheet as active
     $spreadsheet->setActiveSheetIndex(0);
 
@@ -442,7 +542,7 @@ final class ExportService {
   }
 
   /**
-   * Adds category statistics table to PDF.
+   * Adds category statistics table to PDF with visual progress bars.
    */
   private function addCategoryTable(TCPDF $pdf, array $categories): void {
     $pdf->SetFont('helvetica', 'B', 9);
@@ -450,10 +550,10 @@ final class ExportService {
     $pdf->SetTextColor(255, 255, 255);
 
     // Headers
-    $pdf->Cell(55, 7, 'Categoría', 1, 0, 'C', true);
-    $pdf->Cell(40, 7, 'Total Respondidas', 1, 0, 'C', true);
-    $pdf->Cell(40, 7, 'Correctas', 1, 0, 'C', true);
-    $pdf->Cell(45, 7, 'Precisión', 1, 1, 'C', true);
+    $pdf->Cell(50, 7, 'Categoría', 1, 0, 'C', true);
+    $pdf->Cell(30, 7, 'Respondidas', 1, 0, 'C', true);
+    $pdf->Cell(30, 7, 'Correctas', 1, 0, 'C', true);
+    $pdf->Cell(70, 7, 'Precisión', 1, 1, 'C', true);
 
     // Data
     $pdf->SetFont('helvetica', '', 9);
@@ -462,17 +562,163 @@ final class ExportService {
 
     foreach ($categories as $category) {
       $pdf->SetFillColor(245, 247, 250);
-      $name = mb_substr($category['category_name'] ?? 'N/A', 0, 25);
+      $name = mb_substr($category['category_name'] ?? 'N/A', 0, 22);
       $totalAnswers = (int)($category['total_answers'] ?? 0);
       $accuracy = (float)($category['accuracy_percent'] ?? 0);
       $correctCount = (int)round($totalAnswers * $accuracy / 100);
 
-      $pdf->Cell(55, 6, $name, 1, 0, 'L', $fill);
-      $pdf->Cell(40, 6, (string)$totalAnswers, 1, 0, 'C', $fill);
-      $pdf->Cell(40, 6, (string)$correctCount, 1, 0, 'C', $fill);
-      $pdf->Cell(45, 6, $accuracy . '%', 1, 1, 'C', $fill);
+      $startX = $pdf->GetX();
+      $startY = $pdf->GetY();
+
+      $pdf->Cell(50, 8, $name, 1, 0, 'L', $fill);
+      $pdf->Cell(30, 8, (string)$totalAnswers, 1, 0, 'C', $fill);
+      $pdf->Cell(30, 8, (string)$correctCount, 1, 0, 'C', $fill);
+
+      // Progress bar cell
+      $barX = $pdf->GetX();
+      $barY = $pdf->GetY();
+      $pdf->Cell(70, 8, '', 1, 0, 'C', $fill);
+
+      // Draw progress bar inside the cell
+      $this->addProgressBar($pdf, $barX + 2, $barY + 2, 50, 4, $accuracy);
+
+      // Add percentage text after the bar
+      $pdf->SetXY($barX + 54, $barY);
+      $pdf->SetFont('helvetica', 'B', 8);
+      $pdf->Cell(14, 8, number_format($accuracy, 1) . '%', 0, 1, 'R');
+      $pdf->SetFont('helvetica', '', 9);
+
       $fill = !$fill;
     }
+  }
+
+  /**
+   * Draws a progress bar using rectangles.
+   */
+  private function addProgressBar(TCPDF $pdf, float $x, float $y, float $width, float $height, float $percentage): void {
+    // Background bar (gray)
+    $pdf->SetFillColor(229, 231, 235);
+    $pdf->Rect($x, $y, $width, $height, 'F');
+
+    // Calculate filled width
+    $filledWidth = ($percentage / 100) * $width;
+
+    // Choose color based on percentage
+    if ($percentage >= 75) {
+      $pdf->SetFillColor(39, 174, 96); // Green
+    } elseif ($percentage >= 50) {
+      $pdf->SetFillColor(243, 156, 18); // Orange
+    } else {
+      $pdf->SetFillColor(231, 76, 60); // Red
+    }
+
+    // Draw filled bar
+    if ($filledWidth > 0) {
+      $pdf->Rect($x, $y, $filledWidth, $height, 'F');
+    }
+  }
+
+  /**
+   * Adds question analysis section (Top 5 hardest and easiest).
+   */
+  private function addQuestionAnalysisSection(TCPDF $pdf, array $analysis): void {
+    $topHardest = $analysis['top_hardest'] ?? [];
+    $topEasiest = $analysis['top_easiest'] ?? [];
+
+    // Top 5 Hardest Questions
+    if (!empty($topHardest)) {
+      $pdf->SetFont('helvetica', 'B', 11);
+      $pdf->SetTextColor(231, 76, 60); // Red
+      $pdf->Cell(0, 8, 'Top 5 Preguntas Más Difíciles (Menor Tasa de Éxito)', 0, 1, 'L');
+
+      $pdf->SetFont('helvetica', '', 9);
+      $pdf->SetTextColor(0, 0, 0);
+
+      foreach ($topHardest as $index => $question) {
+        $rank = $index + 1;
+        $statement = mb_substr($question['statement'] ?? 'N/A', 0, 80);
+        if (strlen($question['statement'] ?? '') > 80) {
+          $statement .= '...';
+        }
+        $successRate = (float)($question['success_rate'] ?? 0);
+        $timesAnswered = (int)($question['times_answered'] ?? 0);
+
+        // Rank circle
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->Cell(8, 6, $rank . '.', 0, 0, 'C');
+
+        // Question text
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->Cell(120, 6, $statement, 0, 0, 'L');
+
+        // Success rate with color
+        $this->addSuccessRateBadge($pdf, $successRate);
+
+        // Times answered
+        $pdf->SetFont('helvetica', '', 8);
+        $pdf->SetTextColor(100, 100, 100);
+        $pdf->Cell(25, 6, $timesAnswered . ' resp.', 0, 1, 'R');
+        $pdf->SetTextColor(0, 0, 0);
+      }
+
+      $pdf->Ln(5);
+    }
+
+    // Top 5 Easiest Questions
+    if (!empty($topEasiest)) {
+      $pdf->SetFont('helvetica', 'B', 11);
+      $pdf->SetTextColor(39, 174, 96); // Green
+      $pdf->Cell(0, 8, 'Top 5 Preguntas Más Fáciles (Mayor Tasa de Éxito)', 0, 1, 'L');
+
+      $pdf->SetFont('helvetica', '', 9);
+      $pdf->SetTextColor(0, 0, 0);
+
+      foreach ($topEasiest as $index => $question) {
+        $rank = $index + 1;
+        $statement = mb_substr($question['statement'] ?? 'N/A', 0, 80);
+        if (strlen($question['statement'] ?? '') > 80) {
+          $statement .= '...';
+        }
+        $successRate = (float)($question['success_rate'] ?? 0);
+        $timesAnswered = (int)($question['times_answered'] ?? 0);
+
+        // Rank
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->Cell(8, 6, $rank . '.', 0, 0, 'C');
+
+        // Question text
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->Cell(120, 6, $statement, 0, 0, 'L');
+
+        // Success rate with color
+        $this->addSuccessRateBadge($pdf, $successRate);
+
+        // Times answered
+        $pdf->SetFont('helvetica', '', 8);
+        $pdf->SetTextColor(100, 100, 100);
+        $pdf->Cell(25, 6, $timesAnswered . ' resp.', 0, 1, 'R');
+        $pdf->SetTextColor(0, 0, 0);
+      }
+    }
+  }
+
+  /**
+   * Adds a colored success rate badge.
+   */
+  private function addSuccessRateBadge(TCPDF $pdf, float $rate): void {
+    // Determine color based on rate
+    if ($rate >= 75) {
+      $pdf->SetFillColor(39, 174, 96); // Green
+    } elseif ($rate >= 50) {
+      $pdf->SetFillColor(243, 156, 18); // Orange
+    } else {
+      $pdf->SetFillColor(231, 76, 60); // Red
+    }
+
+    $pdf->SetTextColor(255, 255, 255);
+    $pdf->SetFont('helvetica', 'B', 8);
+    $pdf->Cell(25, 6, number_format($rate, 1) . '%', 0, 0, 'C', true);
+    $pdf->SetTextColor(0, 0, 0);
   }
 
   /**

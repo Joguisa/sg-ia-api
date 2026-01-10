@@ -9,6 +9,7 @@ use Src\Repositories\Interfaces\QuestionRepositoryInterface;
 use Src\Repositories\Interfaces\SystemPromptRepositoryInterface;
 use Src\Repositories\Interfaces\QuestionBatchRepositoryInterface;
 use Src\Repositories\Interfaces\CategoryRepositoryInterface;
+use Src\Repositories\Interfaces\AdminRepositoryInterface;
 use Src\Utils\Response;
 
 final class AdminController {
@@ -17,7 +18,8 @@ final class AdminController {
     private ?SystemPromptRepositoryInterface $prompts = null,
     private ?GameService $gameService = null,
     private ?QuestionBatchRepositoryInterface $batchRepo = null,
-    private ?CategoryRepositoryInterface $categoryRepo = null
+    private ?CategoryRepositoryInterface $categoryRepo = null,
+    private ?AdminRepositoryInterface $adminRepo = null
   ) {}
 
   /**
@@ -1395,6 +1397,361 @@ final class AdminController {
     } catch (\Exception $e) {
       error_log("Error getting batch statistics: " . $e->getMessage());
       Response::json(['ok' => false, 'error' => 'Error al obtener estadísticas: ' . $e->getMessage()], 500);
+    }
+  }
+
+  // ============================================================
+  // ADMIN MANAGEMENT CRUD
+  // ============================================================
+
+  /**
+   * List all admins
+   *
+   * Endpoint: GET /admin/admins
+   *
+   * @return void
+   */
+  public function indexAdmins(): void {
+    if (!$this->adminRepo) {
+      Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
+      return;
+    }
+
+    try {
+      // Get current admin from middleware
+      $currentAdmin = $_SERVER['ADMIN'] ?? null;
+      
+      // Superadmins can see all admins (including inactive)
+      // Regular admins can only see active admins
+      $includeInactive = ($currentAdmin['role'] ?? '') === 'superadmin';
+      
+      $admins = $this->adminRepo->all($includeInactive);
+
+      Response::json([
+        'ok' => true,
+        'admins' => array_map(fn($admin) => $admin->toArray(), $admins)
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok' => false, 'error' => 'Failed to fetch admins: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Get single admin by ID
+   *
+   * Endpoint: GET /admin/admins/{id}
+   *
+   * @param array $params Route parameters (contains 'id')
+   * @return void
+   */
+  public function showAdmin(array $params): void {
+    if (!$this->adminRepo) {
+      Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
+      return;
+    }
+
+    $adminId = (int)($params['id'] ?? 0);
+
+    if ($adminId <= 0) {
+      Response::json(['ok' => false, 'error' => 'Invalid admin ID'], 400);
+      return;
+    }
+
+    try {
+      $admin = $this->adminRepo->find($adminId);
+
+      if (!$admin) {
+        Response::json(['ok' => false, 'error' => 'Admin not found'], 404);
+        return;
+      }
+
+      Response::json([
+        'ok' => true,
+        'admin' => $admin->toArray()
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok' => false, 'error' => 'Failed to fetch admin: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Create new admin (superadmin only)
+   *
+   * Endpoint: POST /admin/admins
+   * Body: { "email": "...", "password": "...", "role": "admin|superadmin" }
+   *
+   * @return void
+   */
+  public function storeAdmin(): void {
+    if (!$this->adminRepo) {
+      Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
+      return;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+    ValidationService::requireFields($data, ['email', 'password', 'role']);
+
+    $email = trim($data['email']);
+    $password = trim($data['password']);
+    $role = trim($data['role']);
+
+    // Validate email format
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      Response::json(['ok' => false, 'error' => 'Invalid email format'], 400);
+      return;
+    }
+
+    // Validate password length
+    if (strlen($password) < 8) {
+      Response::json(['ok' => false, 'error' => 'Password must be at least 8 characters'], 400);
+      return;
+    }
+
+    // Validate role
+    if (!in_array($role, ['admin', 'superadmin'])) {
+      Response::json(['ok' => false, 'error' => 'Role must be "admin" or "superadmin"'], 400);
+      return;
+    }
+
+    try {
+      // Check if email already exists
+      $existing = $this->adminRepo->findByEmail($email);
+      if ($existing) {
+        Response::json(['ok' => false, 'error' => 'Email already exists'], 409);
+        return;
+      }
+
+      // Hash password
+      $passwordHash = password_hash($password, PASSWORD_BCRYPT);
+
+      // Create admin
+      $admin = $this->adminRepo->create($email, $passwordHash, $role);
+
+      Response::json([
+        'ok' => true,
+        'admin' => $admin->toArray(),
+        'message' => 'Admin created successfully'
+      ], 201);
+    } catch (\Exception $e) {
+      Response::json(['ok' => false, 'error' => 'Failed to create admin: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Update admin (superadmin only)
+   *
+   * Endpoint: PUT /admin/admins/{id}
+   * Body: { "email"?: "...", "password"?: "...", "role"?: "admin|superadmin" }
+   *
+   * @param array $params Route parameters (contains 'id')
+   * @return void
+   */
+  public function updateAdmin(array $params): void {
+    if (!$this->adminRepo) {
+      Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
+      return;
+    }
+
+    $adminId = (int)($params['id'] ?? 0);
+
+    if ($adminId <= 0) {
+      Response::json(['ok' => false, 'error' => 'Invalid admin ID'], 400);
+      return;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+
+    if (empty($data)) {
+      Response::json(['ok' => false, 'error' => 'No data provided'], 400);
+      return;
+    }
+
+    try {
+      // Verify admin exists
+      $admin = $this->adminRepo->find($adminId);
+      if (!$admin) {
+        Response::json(['ok' => false, 'error' => 'Admin not found'], 404);
+        return;
+      }
+
+      $updateData = [];
+
+      // Validate and prepare email if provided
+      if (isset($data['email'])) {
+        $email = trim($data['email']);
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+          Response::json(['ok' => false, 'error' => 'Invalid email format'], 400);
+          return;
+        }
+
+        // Check if new email already exists (but not for current admin)
+        $existing = $this->adminRepo->findByEmail($email);
+        if ($existing && $existing->id !== $adminId) {
+          Response::json(['ok' => false, 'error' => 'Email already exists'], 409);
+          return;
+        }
+
+        $updateData['email'] = $email;
+      }
+
+      // Validate and prepare password if provided
+      if (isset($data['password'])) {
+        $password = trim($data['password']);
+        if (strlen($password) < 8) {
+          Response::json(['ok' => false, 'error' => 'Password must be at least 8 characters'], 400);
+          return;
+        }
+        $updateData['password_hash'] = password_hash($password, PASSWORD_BCRYPT);
+      }
+
+      // Validate and prepare role if provided
+      if (isset($data['role'])) {
+        $role = trim($data['role']);
+        if (!in_array($role, ['admin', 'superadmin'])) {
+          Response::json(['ok' => false, 'error' => 'Role must be "admin" or "superadmin"'], 400);
+          return;
+        }
+        $updateData['role'] = $role;
+      }
+
+      // Update admin
+      $success = $this->adminRepo->update($adminId, $updateData);
+
+      if (!$success) {
+        Response::json(['ok' => false, 'error' => 'Failed to update admin'], 500);
+        return;
+      }
+
+      // Get updated admin
+      $updatedAdmin = $this->adminRepo->find($adminId);
+
+      Response::json([
+        'ok' => true,
+        'admin' => $updatedAdmin->toArray(),
+        'message' => 'Admin updated successfully'
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok' => false, 'error' => 'Failed to update admin: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Logical deletion - deactivate admin (superadmin only)
+   *
+   * Endpoint: DELETE /admin/admins/{id}
+   *
+   * @param array $params Route parameters (contains 'id')
+   * @return void
+   */
+  public function destroyAdmin(array $params): void {
+    if (!$this->adminRepo) {
+      Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
+      return;
+    }
+
+    $adminId = (int)($params['id'] ?? 0);
+
+    if ($adminId <= 0) {
+      Response::json(['ok' => false, 'error' => 'Invalid admin ID'], 400);
+      return;
+    }
+
+    try {
+      // Get current admin
+      $currentAdmin = $_SERVER['ADMIN'] ?? null;
+      
+      // Prevent self-deletion
+      if ($currentAdmin && (int)$currentAdmin['id'] === $adminId) {
+        Response::json(['ok' => false, 'error' => 'Cannot deactivate your own account'], 403);
+        return;
+      }
+
+      // Verify admin exists
+      $admin = $this->adminRepo->find($adminId);
+      if (!$admin) {
+        Response::json(['ok' => false, 'error' => 'Admin not found'], 404);
+        return;
+      }
+
+      // Logical delete (set is_active = 0)
+      $success = $this->adminRepo->delete($adminId);
+
+      if (!$success) {
+        Response::json(['ok' => false, 'error' => 'Failed to deactivate admin'], 500);
+        return;
+      }
+
+      Response::json([
+        'ok' => true,
+        'message' => 'Admin deactivated successfully'
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok' => false, 'error' => 'Failed to deactivate admin: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Toggle admin active status (superadmin only)
+   *
+   * Endpoint: PATCH /admin/admins/{id}/status
+   * Body: { "is_active": true|false }
+   *
+   * @param array $params Route parameters (contains 'id')
+   * @return void
+   */
+  public function toggleAdminStatus(array $params): void {
+    if (!$this->adminRepo) {
+      Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
+      return;
+    }
+
+    $adminId = (int)($params['id'] ?? 0);
+
+    if ($adminId <= 0) {
+      Response::json(['ok' => false, 'error' => 'Invalid admin ID'], 400);
+      return;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+    ValidationService::requireFields($data, ['is_active']);
+
+    $isActive = (bool)$data['is_active'];
+
+    try {
+      // Get current admin
+      $currentAdmin = $_SERVER['ADMIN'] ?? null;
+      
+      // Prevent self-deactivation
+      if (!$isActive && $currentAdmin && (int)$currentAdmin['id'] === $adminId) {
+        Response::json(['ok' => false, 'error' => 'Cannot deactivate your own account'], 403);
+        return;
+      }
+
+      // Verify admin exists
+      $admin = $this->adminRepo->find($adminId);
+      if (!$admin) {
+        Response::json(['ok' => false, 'error' => 'Admin not found'], 404);
+        return;
+      }
+
+      // Update status
+      $success = $this->adminRepo->updateStatus($adminId, $isActive);
+
+      if (!$success) {
+        Response::json(['ok' => false, 'error' => 'Failed to update admin status'], 500);
+        return;
+      }
+
+      // Get updated admin
+      $updatedAdmin = $this->adminRepo->find($adminId);
+
+      Response::json([
+        'ok' => true,
+        'admin' => $updatedAdmin->toArray(),
+        'message' => 'Admin status updated successfully'
+      ], 200);
+    } catch (\Exception $e) {
+      Response::json(['ok' => false, 'error' => 'Failed to update admin status: ' . $e->getMessage()], 500);
     }
   }
 }
