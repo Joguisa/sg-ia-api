@@ -58,7 +58,7 @@ final class FireworksAIService implements GenerativeAIInterface
         try {
             $response = $this->client->post($this->apiEndpoint, [
                 'json' => [
-                    'model' => 'accounts/fireworks/models/llama-v3-70b-instruct',
+                    'model' => 'accounts/fireworks/models/llama-v3p3-70b-instruct',
                     'messages' => [
                         [
                             'role' => 'system',
@@ -103,7 +103,7 @@ final class FireworksAIService implements GenerativeAIInterface
         try {
             $response = $this->client->post($this->apiEndpoint, [
                 'json' => [
-                    'model' => 'accounts/fireworks/models/llama-v3-70b-instruct',
+                    'model' => 'accounts/fireworks/models/llama-v3p3-70b-instruct',
                     'messages' => [
                         [
                             'role' => 'user',

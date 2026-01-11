@@ -478,13 +478,15 @@ final class RoomController {
       ];
 
       // Generate PDF
+      $language = $room['language'] ?? 'es';
       $pdfContent = $this->exportService->generateRoomPdf(
         $room,
         $stats,
         $playerStats,
         $questionStats,
         $categoryStats,
-        $questionAnalysis
+        $questionAnalysis,
+        $language
       );
 
       // Send PDF response
@@ -539,13 +541,15 @@ final class RoomController {
       ];
 
       // Generate Excel
+      $language = $room['language'] ?? 'es';
       $excelContent = $this->exportService->generateRoomExcel(
         $room,
         $stats,
         $playerStats,
         $questionStats,
         $categoryStats,
-        $questionAnalysis
+        $questionAnalysis,
+        $language
       );
 
       // Send Excel response

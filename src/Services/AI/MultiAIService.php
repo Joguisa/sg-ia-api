@@ -20,6 +20,7 @@ final class MultiAIService implements GenerativeAIInterface
     ];
     private string $preferredProvider = 'auto';
     private bool $wasFailover = false;
+    private ?int $lastSuccessfulProviderIndex = null;
 
     public function __construct(
         array $providerConfigs,
@@ -96,16 +97,32 @@ final class MultiAIService implements GenerativeAIInterface
                     $this->wasFailover = true;
                 }
 
+                // Guardar el índice del proveedor que generó exitosamente
+                $this->lastSuccessfulProviderIndex = $this->currentProviderIndex;
+
                 return $result;
             } catch (\RuntimeException $e) {
                 $this->providerErrors[$providerName] = $e->getMessage();
                 error_log("Provider {$providerName} failed: " . $e->getMessage());
 
-                // Si es límite de uso, rotar al siguiente proveedor
-                if (
-                    strpos($e->getMessage(), 'RATE_LIMIT_EXCEEDED') !== false ||
-                    strpos($e->getMessage(), '429') !== false
-                ) {
+                // Si es límite de uso/cuota/balance, rotar al siguiente proveedor
+                $errorMsg = $e->getMessage();
+                $shouldRotate = (
+                    // Códigos HTTP de límite/cuota
+                    strpos($errorMsg, '429') !== false ||        // Too Many Requests (Gemini)
+                    strpos($errorMsg, '402') !== false ||        // Payment Required (DeepSeek)
+                    strpos($errorMsg, '403') !== false ||        // Forbidden (varios proveedores)
+
+                    // Mensajes de error comunes
+                    strpos($errorMsg, 'RATE_LIMIT_EXCEEDED') !== false ||
+                    strpos($errorMsg, 'Insufficient Balance') !== false ||
+                    strpos($errorMsg, 'insufficient_quota') !== false ||
+                    stripos($errorMsg, 'quota exceeded') !== false ||
+                    stripos($errorMsg, 'exceeded your current quota') !== false
+                );
+
+                if ($shouldRotate) {
+                    error_log("Detectado error de cuota/balance, rotando a siguiente proveedor...");
                     $this->rotateProvider();
                     $attempts++;
                     continue;
@@ -127,9 +144,31 @@ final class MultiAIService implements GenerativeAIInterface
             $provider = $this->providers[$this->currentProviderIndex];
 
             try {
-                return $provider->validateAnswer($question, $answer);
+                $result = $provider->validateAnswer($question, $answer);
+
+                // Guardar el índice del proveedor que validó exitosamente
+                $this->lastSuccessfulProviderIndex = $this->currentProviderIndex;
+
+                return $result;
             } catch (\RuntimeException $e) {
-                if (strpos($e->getMessage(), 'RATE_LIMIT_EXCEEDED') !== false) {
+                // Si es límite de uso/cuota/balance, rotar al siguiente proveedor
+                $errorMsg = $e->getMessage();
+                $shouldRotate = (
+                    // Códigos HTTP de límite/cuota
+                    strpos($errorMsg, '429') !== false ||        // Too Many Requests (Gemini)
+                    strpos($errorMsg, '402') !== false ||        // Payment Required (DeepSeek)
+                    strpos($errorMsg, '403') !== false ||        // Forbidden (varios proveedores)
+
+                    // Mensajes de error comunes
+                    strpos($errorMsg, 'RATE_LIMIT_EXCEEDED') !== false ||
+                    strpos($errorMsg, 'Insufficient Balance') !== false ||
+                    strpos($errorMsg, 'insufficient_quota') !== false ||
+                    stripos($errorMsg, 'quota exceeded') !== false ||
+                    stripos($errorMsg, 'exceeded your current quota') !== false
+                );
+
+                if ($shouldRotate) {
+                    error_log("Detectado error de cuota/balance en validación, rotando a siguiente proveedor...");
                     $this->rotateProvider();
                     $attempts++;
                     continue;
@@ -158,6 +197,21 @@ final class MultiAIService implements GenerativeAIInterface
     public function getActiveProviderName(): string
     {
         $className = get_class($this->providers[$this->currentProviderIndex]);
+        foreach ($this->providerMap as $name => $class) {
+            if ($class === $className) {
+                return $name;
+            }
+        }
+        return 'unknown';
+    }
+
+    public function getLastUsedProviderName(): string
+    {
+        if ($this->lastSuccessfulProviderIndex === null) {
+            return 'unknown';
+        }
+
+        $className = get_class($this->providers[$this->lastSuccessfulProviderIndex]);
         foreach ($this->providerMap as $name => $class) {
             if ($class === $className) {
                 return $name;

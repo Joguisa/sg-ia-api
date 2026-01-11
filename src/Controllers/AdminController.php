@@ -602,33 +602,88 @@ final class AdminController {
     }
 
     try {
-      // Crear batch antes de generar preguntas
-      $langLabel = $language === 'es' ? 'ES' : 'EN';
-      $batchName = "IA-Gen-{$langLabel}-" . date('Y-m-d_H-i-s');
-      $batchId = $this->batchRepo->create([
-        'batch_name' => $batchName,
-        'batch_type' => 'ai_generated',
-        'description' => "Generación automática: {$quantity} preguntas, dificultad {$difficulty}, idioma {$language}",
-        'total_questions' => $quantity,
-        'language' => $language
-      ]);
-
+      // Generar preguntas primero para capturar el proveedor correcto
       $generated = [];
       $failed = 0;
+      $actualProvider = null;
 
       for ($i = 0; $i < $quantity; $i++) {
-        // Pasar batchId y language para asociar pregunta con batch y capturar proveedor
-        $question = $this->gameService->generateAndSaveQuestion($categoryId, $difficulty, $batchId, $language);
+        // Primera iteración: generar SIN batch para capturar proveedor
+        $question = $this->gameService->generateAndSaveQuestion($categoryId, $difficulty, null, $language);
 
         if ($question) {
+          // Capturar el proveedor solo en la PRIMERA generación exitosa
+          if ($actualProvider === null) {
+            $generativeAi = $this->gameService->getGenerativeAI();
+            if ($generativeAi && method_exists($generativeAi, 'getLastUsedProviderName')) {
+              $actualProvider = $generativeAi->getLastUsedProviderName();
+              // DEBUG: Log temporal para diagnosticar
+              error_log("=== CAPTURA DE PROVEEDOR ===");
+              error_log("Provider capturado: " . $actualProvider);
+              error_log("Clase del generativeAi: " . get_class($generativeAi));
+            } else {
+              $actualProvider = 'unknown';
+              error_log("=== ERROR: No se pudo obtener provider ===");
+            }
+          }
           $generated[] = $question;
         } else {
           $failed++;
         }
       }
 
+      // Si NO se generó ninguna pregunta, retornar error
+      if (count($generated) === 0) {
+        Response::json([
+          'ok' => false,
+          'error' => 'Failed to generate any questions. Check AI provider configuration and credits.',
+          'generated' => 0,
+          'failed' => $failed
+        ], 500);
+        return;
+      }
+
+      // Crear batch SOLO si hubo preguntas exitosas
+      $langLabel = $language === 'es' ? 'ES' : 'EN';
+      $batchName = "IA-Gen-{$langLabel}-" . date('Y-m-d_H-i-s');
+
+      // DEBUG: Log antes de crear batch
+      error_log("=== CREANDO BATCH ===");
+      error_log("ai_provider_used que se guardará: " . $actualProvider);
+
+      $batchId = $this->batchRepo->create([
+        'batch_name' => $batchName,
+        'batch_type' => 'ai_generated',
+        'description' => "Generación automática: {$quantity} preguntas, dificultad {$difficulty}, idioma {$language}",
+        'total_questions' => count($generated), // Total real, no el solicitado
+        'language' => $language,
+        'ai_provider_used' => $actualProvider // Proveedor real usado
+      ]);
+
+      // DEBUG: Verificar qué se guardó realmente
+      if ($batchId) {
+        $pdo = $this->questions->getPdo();
+        $checkStmt = $pdo->prepare("SELECT ai_provider_used FROM question_batches WHERE id = :id");
+        $checkStmt->execute([':id' => $batchId]);
+        $savedProvider = $checkStmt->fetchColumn();
+        error_log("ai_provider_used guardado en BD: " . $savedProvider);
+      }
+
+      // Asociar preguntas generadas al batch
+      if ($batchId) {
+        $pdo = $this->questions->getPdo();
+        $updateStmt = $pdo->prepare("UPDATE questions SET batch_id = :batch_id WHERE id = :question_id");
+
+        foreach ($generated as $q) {
+          $updateStmt->execute([
+            ':batch_id' => $batchId,
+            ':question_id' => $q['id']
+          ]);
+        }
+      }
+
       // Actualizar status del batch según resultados
-      $status = $failed === 0 ? 'complete' : ($failed < $quantity ? 'partial' : 'pending');
+      $status = $failed === 0 ? 'complete' : 'partial';
       $this->batchRepo->updateStatus($batchId, $status);
 
       Response::json([
@@ -636,6 +691,7 @@ final class AdminController {
         'batch_id' => $batchId,
         'batch_name' => $batchName,
         'language' => $language,
+        'ai_provider' => $actualProvider,
         'generated' => count($generated),
         'failed' => $failed,
         'questions' => $generated,
@@ -1032,8 +1088,8 @@ final class AdminController {
       }
 
       // Leer headers
-      $headers = fgetcsv($handle);
-      $requiredHeaders = ['category_id', 'difficulty', 'statement', 'option_1', 'option_2', 'option_3', 'option_4', 'correct_option_index', 'explanation_correct', 'explanation_incorrect', 'source_citation'];
+      $headers = fgetcsv($handle, 0, ',', '"', '\\');
+      $requiredHeaders = ['category_id', 'difficulty', 'statement', 'option_1', 'option_2', 'option_3', 'option_4', 'correct_option_index', 'explanation_correct', 'explanation_incorrect', 'source_citation', 'language'];
 
       if (!$headers || count(array_intersect($headers, $requiredHeaders)) !== count($requiredHeaders)) {
         fclose($handle);
@@ -1052,10 +1108,14 @@ final class AdminController {
         return;
       }
 
+      // Determinar idioma del batch (se usará el de la primera fila válida)
+      $batchLanguage = 'es'; // Default
+      
       $batchId = $this->batchRepo->create([
         'batch_name' => 'CSV-' . date('Y-m-d H:i:s'),
         'batch_type' => 'csv_imported',
         'description' => 'Importado desde CSV por admin',
+        'language' => $batchLanguage, // Se actualizará con la primera pregunta
         'total_questions' => 0
       ]);
 
@@ -1065,7 +1125,7 @@ final class AdminController {
       $lineNumber = 2; // Headers en línea 1
 
       // Procesar líneas
-      while (($row = fgetcsv($handle)) !== false) {
+      while (($row = fgetcsv($handle, 0, ',', '"', '\\')) !== false) {
         // Mapear valores del CSV a array asociativo
         $rowData = array_combine($headers, $row);
 
@@ -1074,6 +1134,7 @@ final class AdminController {
           $categoryId = (int)($rowData['category_id'] ?? 0);
           $difficulty = (int)($rowData['difficulty'] ?? 0);
           $correctOptionIndex = (int)($rowData['correct_option_index'] ?? -1);
+          $language = trim($rowData['language'] ?? 'es');
 
           if ($categoryId <= 0) {
             throw new \Exception('category_id debe ser un número positivo');
@@ -1085,6 +1146,20 @@ final class AdminController {
 
           if (!in_array($correctOptionIndex, [0, 1, 2, 3])) {
             throw new \Exception('correct_option_index debe estar entre 0 y 3');
+          }
+
+          // Validar idioma
+          if (!in_array($language, ['es', 'en'])) {
+            throw new \Exception('language debe ser "es" o "en"');
+          }
+
+          // Actualizar idioma del batch con la primera pregunta válida
+          if ($successCount === 0 && $this->batchRepo) {
+            $pdo = $this->questions->getPdo();
+            if ($pdo) {
+              $stmt = $pdo->prepare("UPDATE question_batches SET language = :lang WHERE id = :id");
+              $stmt->execute([':lang' => $language, ':id' => $batchId]);
+            }
           }
 
           if (empty(trim($rowData['statement'] ?? ''))) {
@@ -1135,7 +1210,8 @@ final class AdminController {
             'statement' => $rowData['statement'],
             'difficulty' => $difficulty,
             'category_id' => $categoryId,
-            'source_id' => null
+            'source_id' => null,
+            'language' => $language
           ], $batchId);
 
           if (!$questionId) {

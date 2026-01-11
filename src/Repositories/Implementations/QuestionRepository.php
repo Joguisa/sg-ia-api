@@ -890,8 +890,8 @@ final class QuestionRepository implements QuestionRepositoryInterface
   public function createWithBatch(array $questionData, int $batchId): int|false
   {
     try {
-      $sql = "INSERT INTO questions (statement, difficulty, category_id, source_id, batch_id, is_ai_generated, admin_verified, is_active)
-              VALUES (:statement, :difficulty, :category_id, :source_id, :batch_id, 0, 0, 1)";
+      $sql = "INSERT INTO questions (statement, difficulty, category_id, source_id, batch_id, language, is_ai_generated, admin_verified, is_active)
+              VALUES (:statement, :difficulty, :category_id, :source_id, :batch_id, :language, 0, 0, 1)";
 
       $st = $this->db->pdo()->prepare($sql);
       $success = $st->execute([
@@ -899,7 +899,8 @@ final class QuestionRepository implements QuestionRepositoryInterface
         ':difficulty' => (int)$questionData['difficulty'],
         ':category_id' => (int)$questionData['category_id'],
         ':source_id' => $questionData['source_id'] ?? null,
-        ':batch_id' => $batchId
+        ':batch_id' => $batchId,
+        ':language' => $questionData['language'] ?? 'es'
       ]);
 
       if ($success) {

@@ -329,10 +329,6 @@ final class GameService
       // Generar pregunta con IA
       $generatedData = $this->generativeAi->generateQuestion($categoryName, $difficulty, $language);
 
-      // Capturar información del proveedor de IA
-      $providerUsed = $this->generativeAi->getActiveProviderName();
-      $hadFailover = $this->generativeAi->hadFailover();
-
       // Crear pregunta en BD marcada como generada por IA y no verificada por admin
       if ($batchId !== null) {
         // Usar createWithBatch si se proporciona batchId
@@ -340,7 +336,8 @@ final class GameService
           'statement' => $generatedData['statement'],
           'difficulty' => $difficulty,
           'category_id' => $categoryId,
-          'source_id' => null
+          'source_id' => null,
+          'language' => $language
         ], $batchId);
       } else {
         // Usar create normal si no hay batchId
@@ -350,13 +347,9 @@ final class GameService
           'category_id' => $categoryId,
           'is_active' => 1,
           'is_ai_generated' => true,
-          'admin_verified' => false
+          'admin_verified' => false,
+          'language' => $language
         ]);
-      }
-
-      // Actualizar batch con proveedor usado (si se proporcionó batch y repositorio disponible)
-      if ($batchId !== null && $this->batchRepo !== null && $providerUsed) {
-        $this->batchRepo->updateAiProvider($batchId, $providerUsed);
       }
 
       // Guardar opciones
