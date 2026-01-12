@@ -5,6 +5,8 @@ namespace Src\Controllers;
 
 use Src\Repositories\Interfaces\CategoryRepositoryInterface;
 use Src\Utils\Response;
+use Src\Utils\Translations;
+use Src\Utils\LanguageDetector;
 
 final class CategoryController {
   public function __construct(private CategoryRepositoryInterface $categories) {}
@@ -17,6 +19,7 @@ final class CategoryController {
    * @return void
    */
   public function list(): void {
+    $lang = LanguageDetector::detect();
     try {
       $categories = $this->categories->findAll();
 
@@ -25,7 +28,7 @@ final class CategoryController {
         'categories' => $categories
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Failed to fetch categories: ' . $e->getMessage()], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('failed_to_fetch_categories', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 }

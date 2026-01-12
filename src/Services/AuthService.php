@@ -85,7 +85,7 @@ final class AuthService {
       $decoded = JWT::decode($token, new Key($this->jwtSecret, 'HS256'));
       return [
         'ok' => true,
-        'payload' => $decoded
+        'payload' => (array)$decoded
       ];
     } catch (\Exception $e) {
       return ['ok' => false, 'error' => 'Invalid token: ' . $e->getMessage()];

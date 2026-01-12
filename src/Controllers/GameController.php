@@ -5,6 +5,8 @@ namespace Src\Controllers;
 use Src\Services\GameService;
 use Src\Services\ValidationService;
 use Src\Utils\Response;
+use Src\Utils\Translations;
+use Src\Utils\LanguageDetector;
 use Src\Repositories\Interfaces\SessionRepositoryInterface;
 
 final class GameController
@@ -25,6 +27,7 @@ final class GameController
    */
   public function start(): void
   {
+    $lang = LanguageDetector::detect();
     try {
       $data = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR) ?? [];
       ValidationService::requireFields($data, ['player_id']);
@@ -34,13 +37,13 @@ final class GameController
       $roomCode = isset($data['room_code']) && !empty($data['room_code']) ? trim($data['room_code']) : null;
 
       if ($playerId <= 0) {
-        throw new \InvalidArgumentException('player_id debe ser > 0');
+        throw new \InvalidArgumentException(Translations::get('player_id_required', $lang));
       }
 
       $out = $this->game->startSession($playerId, $startDiff, $roomCode);
       Response::json(['ok' => true] + $out, 201);
     } catch (\JsonException $e) {
-      Response::json(['ok' => false, 'error' => 'JSON inválido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_json', $lang)], 400);
     } catch (\InvalidArgumentException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 400);
     } catch (\RangeError $e) {
@@ -52,6 +55,7 @@ final class GameController
 
   public function next(): void
   {
+    $lang = LanguageDetector::detect();
     try {
       // category_id es opcional: si es 0 o no existe, buscar en TODAS las categorías
       $categoryIdParam = $_GET['category_id'] ?? 0;
@@ -64,11 +68,11 @@ final class GameController
       $difficulty = (int)round($difficultyFloat);
 
       if ($difficulty < 1 || $difficulty > 5) {
-        throw new \InvalidArgumentException('Parámetros inválidos');
+        throw new \InvalidArgumentException(Translations::get('invalid_parameters', $lang));
       }
 
       if ($sessionId <= 0) {
-        throw new \InvalidArgumentException('session_id es requerido');
+        throw new \InvalidArgumentException(Translations::get('session_id_required', $lang));
       }
 
       $q = $this->game->nextQuestion($categoryId, $difficulty, $sessionId);
@@ -82,7 +86,7 @@ final class GameController
           Response::json([
             'ok' => true,
             'completed' => true,
-            'message' => '¡Felicitaciones! Completaste el cuestionario'
+            'message' => Translations::get('quiz_completed', $lang)
           ], 200);
         } else {
           // Sin preguntas disponibles pero NO porque alcanzó el límite
@@ -100,8 +104,8 @@ final class GameController
           );
 
           $message = $categoryId
-            ? '¡Felicitaciones! Completaste todas las preguntas disponibles de esta categoría'
-            : '¡Felicitaciones! Completaste todas las preguntas disponibles';
+            ? Translations::get('category_questions_completed', $lang)
+            : Translations::get('all_questions_completed', $lang);
 
           Response::json([
             'ok' => true,
@@ -121,13 +125,14 @@ final class GameController
 
   public function answer(array $params): void
   {
+    $lang = LanguageDetector::detect();
     try {
       $data = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR) ?? [];
       ValidationService::requireFields($data, ['question_id', 'time_taken']);
 
       $sessionId = (int)$params['id'];
       if ($sessionId <= 0) {
-        throw new \InvalidArgumentException('ID de sesión inválido');
+        throw new \InvalidArgumentException(Translations::get('invalid_session_id', $lang));
       }
 
       $out = $this->game->submitAnswer(
@@ -138,7 +143,7 @@ final class GameController
       );
       Response::json(['ok' => true] + $out);
     } catch (\JsonException $e) {
-      Response::json(['ok' => false, 'error' => 'JSON inválido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_json', $lang)], 400);
     } catch (\InvalidArgumentException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 400);
     } catch (\RangeError $e) {

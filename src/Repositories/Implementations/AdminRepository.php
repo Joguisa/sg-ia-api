@@ -27,7 +27,7 @@ final class AdminRepository implements AdminRepositoryInterface {
     
     return array_map(function($row) {
       return $this->mapRowToAdmin($row);
-    }, $stmt->fetchAll());
+    }, $stmt->fetchAll(PDO::FETCH_ASSOC));
   }
 
   /**
@@ -40,7 +40,7 @@ final class AdminRepository implements AdminRepositoryInterface {
        WHERE id = :id"
     );
     $stmt->execute([':id' => $id]);
-    $row = $stmt->fetch();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     return $row ? $this->mapRowToAdmin($row) : null;
   }
@@ -55,7 +55,7 @@ final class AdminRepository implements AdminRepositoryInterface {
        WHERE email = :email"
     );
     $stmt->execute([':email' => $email]);
-    $row = $stmt->fetch();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     return $row ? $this->mapRowToAdmin($row) : null;
   }

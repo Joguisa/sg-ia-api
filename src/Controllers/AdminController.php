@@ -11,6 +11,8 @@ use Src\Repositories\Interfaces\QuestionBatchRepositoryInterface;
 use Src\Repositories\Interfaces\CategoryRepositoryInterface;
 use Src\Repositories\Interfaces\AdminRepositoryInterface;
 use Src\Utils\Response;
+use Src\Utils\Translations;
+use Src\Utils\LanguageDetector;
 
 final class AdminController {
   public function __construct(
@@ -32,10 +34,11 @@ final class AdminController {
    * @return void
    */
   public function updateQuestion(array $params): void {
+    $lang = LanguageDetector::detect();
     $questionId = (int)($params['id'] ?? 0);
 
     if ($questionId <= 0) {
-      Response::json(['ok'=>false,'error'=>'Invalid question ID'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('invalid_question_id', $lang)], 400);
       return;
     }
 
@@ -45,17 +48,17 @@ final class AdminController {
     $statement = trim($data['statement']);
 
     if (empty($statement)) {
-      Response::json(['ok'=>false,'error'=>'Question statement cannot be empty'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('question_statement_empty', $lang)], 400);
       return;
     }
 
     if (strlen($statement) < 10) {
-      Response::json(['ok'=>false,'error'=>'Question statement must be at least 10 characters'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('question_statement_too_short', $lang)], 400);
       return;
     }
 
     if (strlen($statement) > 1000) {
-      Response::json(['ok'=>false,'error'=>'Question statement cannot exceed 1000 characters'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('question_statement_too_long', $lang)], 400);
       return;
     }
 
@@ -63,7 +66,7 @@ final class AdminController {
       $question = $this->questions->find($questionId);
 
       if (!$question) {
-        Response::json(['ok'=>false,'error'=>'Question not found'], 404);
+        Response::json(['ok'=>false,'error'=>Translations::get('question_not_found', $lang)], 404);
         return;
       }
 
@@ -72,7 +75,7 @@ final class AdminController {
 
       Response::json([
         'ok' => true,
-        'message' => 'Question updated successfully',
+        'message' => Translations::get('question_updated', $lang),
         'question' => [
           'id' => $question->id,
           'statement' => $statement,
@@ -83,7 +86,7 @@ final class AdminController {
         ]
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Failed to update question: ' . $e->getMessage()], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('failed_to_update_question', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -96,10 +99,11 @@ final class AdminController {
    * @return void
    */
   public function getQuestionFull(array $params): void {
+    $lang = LanguageDetector::detect();
     $questionId = (int)($params['id'] ?? 0);
 
     if ($questionId <= 0) {
-      Response::json(['ok' => false, 'error' => 'Invalid question ID'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_question_id', $lang)], 400);
       return;
     }
 
@@ -107,7 +111,7 @@ final class AdminController {
       $question = $this->questions->getFullQuestion($questionId);
 
       if (!$question) {
-        Response::json(['ok' => false, 'error' => 'Question not found'], 404);
+        Response::json(['ok' => false, 'error' => Translations::get('question_not_found', $lang)], 404);
         return;
       }
 
@@ -116,7 +120,7 @@ final class AdminController {
         'question' => $question
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok' => false, 'error' => 'Failed to get question: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('failed_to_fetch_question', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -142,10 +146,11 @@ final class AdminController {
    * @return void
    */
   public function updateQuestionFull(array $params): void {
+    $lang = LanguageDetector::detect();
     $questionId = (int)($params['id'] ?? 0);
 
     if ($questionId <= 0) {
-      Response::json(['ok' => false, 'error' => 'Invalid question ID'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_question_id', $lang)], 400);
       return;
     }
 
@@ -157,33 +162,33 @@ final class AdminController {
     // Validar enunciado
     $statement = trim($data['statement']);
     if (empty($statement) || strlen($statement) < 10) {
-      Response::json(['ok' => false, 'error' => 'Statement must be at least 10 characters'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('question_statement_too_short', $lang)], 400);
       return;
     }
 
     if (strlen($statement) > 1000) {
-      Response::json(['ok' => false, 'error' => 'Statement cannot exceed 1000 characters'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('question_statement_too_long', $lang)], 400);
       return;
     }
 
     // Validar dificultad
     $difficulty = (int)$data['difficulty'];
     if ($difficulty < 1 || $difficulty > 5) {
-      Response::json(['ok' => false, 'error' => 'Difficulty must be between 1 and 5'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('difficulty_invalid', $lang)], 400);
       return;
     }
 
     // Validar opciones
     $options = $data['options'];
     if (!is_array($options) || count($options) < 2 || count($options) > 6) {
-      Response::json(['ok' => false, 'error' => 'Must have between 2 and 6 options'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('options_count_invalid', $lang)], 400);
       return;
     }
 
     $correctCount = 0;
     foreach ($options as $opt) {
       if (!isset($opt['text']) || empty(trim($opt['text']))) {
-        Response::json(['ok' => false, 'error' => 'All options must have text'], 400);
+        Response::json(['ok' => false, 'error' => Translations::get('options_must_have_text', $lang)], 400);
         return;
       }
       if (isset($opt['is_correct']) && $opt['is_correct']) {
@@ -192,7 +197,7 @@ final class AdminController {
     }
 
     if ($correctCount !== 1) {
-      Response::json(['ok' => false, 'error' => 'Must have exactly one correct option'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('must_have_one_correct', $lang)], 400);
       return;
     }
 
@@ -200,7 +205,7 @@ final class AdminController {
       // Verificar que la pregunta existe
       $existingQuestion = $this->questions->find($questionId);
       if (!$existingQuestion) {
-        Response::json(['ok' => false, 'error' => 'Question not found'], 404);
+        Response::json(['ok' => false, 'error' => Translations::get('question_not_found', $lang)], 404);
         return;
       }
 
@@ -224,7 +229,7 @@ final class AdminController {
       $success = $this->questions->updateFull($questionId, $updateData);
 
       if (!$success) {
-        Response::json(['ok' => false, 'error' => 'Failed to update question'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('failed_to_update_question', $lang)], 500);
         return;
       }
 
@@ -233,11 +238,11 @@ final class AdminController {
 
       Response::json([
         'ok' => true,
-        'message' => 'Question updated successfully. Verification reset to pending.',
+        'message' => Translations::get('question_updated_verification_reset', $lang),
         'question' => $updatedQuestion
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok' => false, 'error' => 'Failed to update question: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('failed_to_update_question', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -251,10 +256,11 @@ final class AdminController {
    * @return void
    */
   public function verifyQuestion(array $params): void {
+    $lang = LanguageDetector::detect();
     $questionId = (int)($params['id'] ?? 0);
 
     if ($questionId <= 0) {
-      Response::json(['ok'=>false,'error'=>'Invalid question ID'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('invalid_question_id', $lang)], 400);
       return;
     }
 
@@ -267,7 +273,7 @@ final class AdminController {
       $question = $this->questions->find($questionId);
 
       if (!$question) {
-        Response::json(['ok'=>false,'error'=>'Question not found'], 404);
+        Response::json(['ok'=>false,'error'=>Translations::get('question_not_found', $lang)], 404);
         return;
       }
 
@@ -276,7 +282,7 @@ final class AdminController {
 
       Response::json([
         'ok' => true,
-        'message' => 'Question verification status updated',
+        'message' => Translations::get('question_verification_updated', $lang),
         'question' => [
           'id' => $question->id,
           'statement' => $question->statement,
@@ -284,7 +290,7 @@ final class AdminController {
         ]
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Failed to verify question: ' . $e->getMessage()], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('failed_to_verify_question', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -296,15 +302,16 @@ final class AdminController {
    * @return void
    */
   public function getPromptConfig(): void {
+    $lang = LanguageDetector::detect();
     if (!$this->prompts) {
-      Response::json(['ok'=>false,'error'=>'Prompt repository not available'], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('prompt_repo_unavailable', $lang)], 500);
       return;
     }
 
     $prompt = $this->prompts->getActive();
 
     if (!$prompt) {
-      Response::json(['ok'=>false,'error'=>'No active prompt found'], 404);
+      Response::json(['ok'=>false,'error'=>Translations::get('no_active_prompt', $lang)], 404);
       return;
     }
 
@@ -330,8 +337,9 @@ final class AdminController {
    * @return void
    */
   public function updatePromptConfig(): void {
+    $lang = LanguageDetector::detect();
     if (!$this->prompts) {
-      Response::json(['ok'=>false,'error'=>'Prompt repository not available'], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('prompt_repo_unavailable', $lang)], 500);
       return;
     }
 
@@ -344,12 +352,12 @@ final class AdminController {
     $maxQuestions = isset($data['max_questions_per_game']) ? (int)$data['max_questions_per_game'] : 15;
 
     if (empty($promptText)) {
-      Response::json(['ok'=>false,'error'=>'Prompt text cannot be empty'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('prompt_text_empty', $lang)], 400);
       return;
     }
 
     if ($temperature < 0 || $temperature > 1) {
-      Response::json(['ok'=>false,'error'=>'Temperature must be between 0 and 1'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('temperature_invalid', $lang)], 400);
       return;
     }
 
@@ -357,7 +365,7 @@ final class AdminController {
     if ($maxQuestions < 5 || $maxQuestions > 100) {
       Response::json([
         'ok' => false,
-        'error' => 'Max questions must be between 5 and 100'
+        'error' => Translations::get('max_questions_invalid', $lang)
       ], 400);
       return;
     }
@@ -368,7 +376,7 @@ final class AdminController {
       if (!in_array($preferredProvider, $validProviders)) {
         Response::json([
           'ok' => false,
-          'error' => 'Invalid preferred_ai_provider. Must be one of: ' . implode(', ', $validProviders)
+          'error' => Translations::get('invalid_ai_provider', $lang) . ': ' . implode(', ', $validProviders)
         ], 400);
         return;
       }
@@ -384,10 +392,10 @@ final class AdminController {
 
       Response::json([
         'ok' => true,
-        'message' => 'Prompt configuration updated successfully'
+        'message' => Translations::get('prompt_updated', $lang)
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Failed to update prompt: ' . $e->getMessage()], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('failed_to_update_prompt', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -400,6 +408,7 @@ final class AdminController {
    * @return void
    */
   public function createCategory(): void {
+    $lang = LanguageDetector::detect();
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
     ValidationService::requireFields($data, ['name']);
 
@@ -407,14 +416,14 @@ final class AdminController {
     $description = trim($data['description'] ?? '');
 
     if (empty($name)) {
-      Response::json(['ok'=>false,'error'=>'Category name cannot be empty'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('category_name_empty', $lang)], 400);
       return;
     }
 
     try {
       $pdo = $this->questions->getPdo();
       if (!$pdo) {
-        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('database_connection_failed', $lang)], 500);
         return;
       }
 
@@ -426,13 +435,13 @@ final class AdminController {
       Response::json([
         'ok' => true,
         'category_id' => $categoryId,
-        'message' => 'Category created successfully'
+        'message' => Translations::get('category_created', $lang)
       ], 201);
     } catch (\Exception $e) {
       if (str_contains($e->getMessage(), 'Duplicate')) {
-        Response::json(['ok'=>false,'error'=>'Category name already exists'], 409);
+        Response::json(['ok'=>false,'error'=>Translations::get('category_name_exists', $lang)], 409);
       } else {
-        Response::json(['ok'=>false,'error'=>'Failed to create category: ' . $e->getMessage()], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('failed_to_create_category', $lang) . ': ' . $e->getMessage()], 500);
       }
     }
   }
@@ -447,10 +456,11 @@ final class AdminController {
    * @return void
    */
   public function updateCategory(array $params): void {
+    $lang = LanguageDetector::detect();
     $categoryId = (int)($params['id'] ?? 0);
 
     if ($categoryId <= 0) {
-      Response::json(['ok'=>false,'error'=>'Invalid category ID'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('invalid_category_id', $lang)], 400);
       return;
     }
 
@@ -461,20 +471,20 @@ final class AdminController {
     $description = trim($data['description'] ?? '');
 
     if (empty($name)) {
-      Response::json(['ok'=>false,'error'=>'Category name cannot be empty'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('category_name_empty', $lang)], 400);
       return;
     }
 
     try {
       if (!$this->categoryRepo) {
-        Response::json(['ok'=>false,'error'=>'Category repository not available'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('category_repo_unavailable', $lang)], 500);
         return;
       }
 
       // Verificar que la categoría existe
       $existingCategory = $this->categoryRepo->find($categoryId);
       if (!$existingCategory) {
-        Response::json(['ok'=>false,'error'=>'Category not found'], 404);
+        Response::json(['ok'=>false,'error'=>Translations::get('category_not_found', $lang)], 404);
         return;
       }
 
@@ -485,20 +495,20 @@ final class AdminController {
       ]);
 
       if (!$success) {
-        Response::json(['ok'=>false,'error'=>'Failed to update category'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('failed_to_update_category', $lang)], 500);
         return;
       }
 
       Response::json([
         'ok' => true,
         'category_id' => $categoryId,
-        'message' => 'Category updated successfully'
+        'message' => Translations::get('category_updated', $lang)
       ], 200);
     } catch (\Exception $e) {
       if (str_contains($e->getMessage(), 'Duplicate')) {
-        Response::json(['ok'=>false,'error'=>'Category name already exists'], 409);
+        Response::json(['ok'=>false,'error'=>Translations::get('category_name_exists', $lang)], 409);
       } else {
-        Response::json(['ok'=>false,'error'=>'Failed to update category: ' . $e->getMessage()], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('failed_to_update_category', $lang) . ': ' . $e->getMessage()], 500);
       }
     }
   }
@@ -512,23 +522,24 @@ final class AdminController {
    * @return void
    */
   public function deleteCategory(array $params): void {
+    $lang = LanguageDetector::detect();
     $categoryId = (int)($params['id'] ?? 0);
 
     if ($categoryId <= 0) {
-      Response::json(['ok'=>false,'error'=>'Invalid category ID'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('invalid_category_id', $lang)], 400);
       return;
     }
 
     try {
       if (!$this->categoryRepo) {
-        Response::json(['ok'=>false,'error'=>'Category repository not available'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('category_repo_unavailable', $lang)], 500);
         return;
       }
 
       // Verificar que la categoría existe
       $existingCategory = $this->categoryRepo->find($categoryId);
       if (!$existingCategory) {
-        Response::json(['ok'=>false,'error'=>'Category not found'], 404);
+        Response::json(['ok'=>false,'error'=>Translations::get('category_not_found', $lang)], 404);
         return;
       }
 
@@ -536,19 +547,19 @@ final class AdminController {
       $success = $this->categoryRepo->delete($categoryId);
 
       if (!$success) {
-        Response::json(['ok'=>false,'error'=>'Failed to delete category'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('failed_to_delete_category', $lang)], 500);
         return;
       }
 
       Response::json([
         'ok' => true,
-        'message' => 'Category deleted successfully'
+        'message' => Translations::get('category_deleted', $lang)
       ], 200);
     } catch (\Exception $e) {
       if (str_contains($e->getMessage(), 'preguntas asociadas')) {
-        Response::json(['ok'=>false,'error'=>'Cannot delete category with associated questions'], 409);
+        Response::json(['ok'=>false,'error'=>Translations::get('category_has_questions', $lang)], 409);
       } else {
-        Response::json(['ok'=>false,'error'=>'Failed to delete category: ' . $e->getMessage()], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('failed_to_delete_category', $lang) . ': ' . $e->getMessage()], 500);
       }
     }
   }
@@ -562,13 +573,14 @@ final class AdminController {
    * @return void
    */
   public function generateBatch(): void {
+    $lang = LanguageDetector::detect();
     if (!$this->gameService) {
-      Response::json(['ok'=>false,'error'=>'Game service not available'], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('game_service_unavailable', $lang)], 500);
       return;
     }
 
     if (!$this->batchRepo) {
-      Response::json(['ok'=>false,'error'=>'Batch repository not available'], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('batch_repo_unavailable', $lang)], 500);
       return;
     }
 
@@ -581,23 +593,23 @@ final class AdminController {
     $language = $data['language'] ?? 'es';
 
     if ($quantity <= 0 || $quantity > 50) {
-      Response::json(['ok'=>false,'error'=>'Quantity must be between 1 and 50'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('quantity_invalid', $lang)], 400);
       return;
     }
 
     if ($categoryId <= 0) {
-      Response::json(['ok'=>false,'error'=>'Invalid category ID'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('invalid_category_id', $lang)], 400);
       return;
     }
 
     if ($difficulty < 1 || $difficulty > 5) {
-      Response::json(['ok'=>false,'error'=>'Difficulty must be between 1 and 5'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('difficulty_invalid', $lang)], 400);
       return;
     }
 
     // Validar idioma
     if (!in_array($language, ['es', 'en'])) {
-      Response::json(['ok'=>false,'error'=>'Language must be "es" or "en"'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('language_invalid', $lang)], 400);
       return;
     }
 
@@ -617,13 +629,8 @@ final class AdminController {
             $generativeAi = $this->gameService->getGenerativeAI();
             if ($generativeAi && method_exists($generativeAi, 'getLastUsedProviderName')) {
               $actualProvider = $generativeAi->getLastUsedProviderName();
-              // DEBUG: Log temporal para diagnosticar
-              error_log("=== CAPTURA DE PROVEEDOR ===");
-              error_log("Provider capturado: " . $actualProvider);
-              error_log("Clase del generativeAi: " . get_class($generativeAi));
             } else {
               $actualProvider = 'unknown';
-              error_log("=== ERROR: No se pudo obtener provider ===");
             }
           }
           $generated[] = $question;
@@ -636,7 +643,7 @@ final class AdminController {
       if (count($generated) === 0) {
         Response::json([
           'ok' => false,
-          'error' => 'Failed to generate any questions. Check AI provider configuration and credits.',
+          'error' => Translations::get('no_questions_generated', $lang),
           'generated' => 0,
           'failed' => $failed
         ], 500);
@@ -647,10 +654,6 @@ final class AdminController {
       $langLabel = $language === 'es' ? 'ES' : 'EN';
       $batchName = "IA-Gen-{$langLabel}-" . date('Y-m-d_H-i-s');
 
-      // DEBUG: Log antes de crear batch
-      error_log("=== CREANDO BATCH ===");
-      error_log("ai_provider_used que se guardará: " . $actualProvider);
-
       $batchId = $this->batchRepo->create([
         'batch_name' => $batchName,
         'batch_type' => 'ai_generated',
@@ -660,13 +663,11 @@ final class AdminController {
         'ai_provider_used' => $actualProvider // Proveedor real usado
       ]);
 
-      // DEBUG: Verificar qué se guardó realmente
       if ($batchId) {
         $pdo = $this->questions->getPdo();
         $checkStmt = $pdo->prepare("SELECT ai_provider_used FROM question_batches WHERE id = :id");
         $checkStmt->execute([':id' => $batchId]);
         $savedProvider = $checkStmt->fetchColumn();
-        error_log("ai_provider_used guardado en BD: " . $savedProvider);
       }
 
       // Asociar preguntas generadas al batch
@@ -695,10 +696,10 @@ final class AdminController {
         'generated' => count($generated),
         'failed' => $failed,
         'questions' => $generated,
-        'message' => "Generated " . count($generated) . " questions successfully in batch {$batchName}"
+        'message' => count($generated) . " " . Translations::get('questions_generated', $lang) . " {$batchName}"
       ], 201);
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Batch generation failed: ' . $e->getMessage()], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('batch_generation_failed', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -710,10 +711,11 @@ final class AdminController {
    * @return void
    */
   public function dashboardStats(): void {
+    $lang = LanguageDetector::detect();
     try {
       $pdo = $this->questions->getPdo();
       if (!$pdo) {
-        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('database_connection_failed', $lang)], 500);
         return;
       }
 
@@ -794,7 +796,7 @@ final class AdminController {
         ], $easiestQuestions)
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Failed to fetch dashboard stats: ' . $e->getMessage()], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('failed_to_fetch_dashboard_stats', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -806,10 +808,11 @@ final class AdminController {
    * @return void
    */
   public function getQuestions(): void {
+    $lang = LanguageDetector::detect();
     try {
       $pdo = $this->questions->getPdo();
       if (!$pdo) {
-        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('database_connection_failed', $lang)], 500);
         return;
       }
 
@@ -841,10 +844,11 @@ final class AdminController {
    * @return void
    */
   public function getCategories(): void {
+    $lang = LanguageDetector::detect();
     try {
       $pdo = $this->questions->getPdo();
       if (!$pdo) {
-        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('database_connection_failed', $lang)], 500);
         return;
       }
 
@@ -859,7 +863,7 @@ final class AdminController {
         'categories' => $categories ?: []
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Failed to fetch categories: ' . $e->getMessage()], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('failed_to_fetch_categories', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -872,17 +876,18 @@ final class AdminController {
    * @return void
    */
   public function deleteQuestion(array $params): void {
+    $lang = LanguageDetector::detect();
     $questionId = (int)($params['id'] ?? 0);
 
     if ($questionId <= 0) {
-      Response::json(['ok'=>false,'error'=>'Invalid question ID'], 400);
+      Response::json(['ok'=>false,'error'=>Translations::get('invalid_question_id', $lang)], 400);
       return;
     }
 
     try {
       $pdo = $this->questions->getPdo();
       if (!$pdo) {
-        Response::json(['ok'=>false,'error'=>'Database connection failed'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('database_connection_failed', $lang)], 500);
         return;
       }
 
@@ -891,7 +896,7 @@ final class AdminController {
       $checkStmt->execute([$questionId]);
 
       if (!$checkStmt->fetch()) {
-        Response::json(['ok'=>false,'error'=>'Question not found'], 404);
+        Response::json(['ok'=>false,'error'=>Translations::get('question_not_found', $lang)], 404);
         return;
       }
 
@@ -899,12 +904,12 @@ final class AdminController {
       $success = $stmt->execute([$questionId]);
 
       if ($success) {
-        Response::json(['ok'=>true,'message'=>'Question deleted successfully'], 200);
+        Response::json(['ok'=>true,'message'=>Translations::get('question_deleted', $lang)], 200);
       } else {
-        Response::json(['ok'=>false,'error'=>'Failed to delete question'], 500);
+        Response::json(['ok'=>false,'error'=>Translations::get('failed_to_delete_question', $lang)], 500);
       }
     } catch (\Exception $e) {
-      Response::json(['ok'=>false,'error'=>'Error deleting question: ' . $e->getMessage()], 500);
+      Response::json(['ok'=>false,'error'=>Translations::get('error_deleting_question', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -918,10 +923,11 @@ final class AdminController {
    */
   public function verifyBatch(array $params): void
   {
+    $lang = LanguageDetector::detect();
     $batchId = (int)($params['batchId'] ?? 0);
 
     if ($batchId <= 0) {
-      Response::json(['ok' => false, 'error' => 'ID de batch inválido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_batch_id', $lang)], 400);
       return;
     }
 
@@ -930,7 +936,7 @@ final class AdminController {
       $questions = $this->questions->getByBatchId($batchId);
 
       if (empty($questions)) {
-        Response::json(['ok' => false, 'error' => 'Batch no encontrado'], 404);
+        Response::json(['ok' => false, 'error' => Translations::get('batch_not_found', $lang)], 404);
         return;
       }
 
@@ -961,13 +967,13 @@ final class AdminController {
 
       Response::json([
         'ok' => true,
-        'message' => count($questions) . ' preguntas verificadas',
+        'message' => count($questions) . ' ' . Translations::get('questions_verified', $lang),
         'verified_count' => count($questions),
         'batch_id' => $batchId
       ]);
     } catch (\Exception $e) {
       error_log("Error verifying batch: " . $e->getMessage());
-      Response::json(['ok' => false, 'error' => 'Error al verificar batch: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('error_verifying_batch', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -981,12 +987,13 @@ final class AdminController {
    */
   public function verifyBulk(): void
   {
+    $lang = LanguageDetector::detect();
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
 
     try {
       $pdo = $this->questions->getPdo();
       if (!$pdo) {
-        Response::json(['ok' => false, 'error' => 'Database connection failed'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('database_connection_failed', $lang)], 500);
         return;
       }
 
@@ -1020,7 +1027,7 @@ final class AdminController {
         }
       }
       else {
-        Response::json(['ok' => false, 'error' => 'Debe especificar verify_all_pending, question_ids o batch_id'], 400);
+        Response::json(['ok' => false, 'error' => Translations::get('must_specify_verification_method', $lang)], 400);
         return;
       }
 
@@ -1041,14 +1048,14 @@ final class AdminController {
       Response::json([
         'ok' => true,
         'message' => $verifiedCount > 0
-          ? "$verifiedCount pregunta(s) verificada(s) exitosamente"
-          : "No hay preguntas pendientes de verificación",
+          ? "$verifiedCount " . Translations::get('questions_verified_successfully', $lang)
+          : Translations::get('no_pending_questions', $lang),
         'verified_count' => $verifiedCount
       ], 200);
 
     } catch (\Exception $e) {
       error_log("Error in bulk verification: " . $e->getMessage());
-      Response::json(['ok' => false, 'error' => 'Error al verificar preguntas: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('error_verifying_questions', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -1323,6 +1330,7 @@ final class AdminController {
    */
   public function editExplanation(array $params): void
   {
+    $lang = LanguageDetector::detect();
     $explanationId = (int)($params['explanationId'] ?? 0);
 
     if ($explanationId <= 0) {
@@ -1334,14 +1342,14 @@ final class AdminController {
     $newText = $body['text'] ?? null;
 
     if (!$newText || empty(trim($newText))) {
-      Response::json(['ok' => false, 'error' => 'El texto no puede estar vacío'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('text_cannot_be_empty', $lang)], 400);
       return;
     }
 
     try {
       $pdo = $this->questions->getPdo();
       if (!$pdo) {
-        Response::json(['ok' => false, 'error' => 'Database connection failed'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('database_connection_failed', $lang)], 500);
         return;
       }
 
@@ -1389,9 +1397,10 @@ final class AdminController {
    */
   public function getAvailableProviders(): void
   {
+    $lang = LanguageDetector::detect();
     try {
       if (!$this->gameService) {
-        Response::json(['ok' => false, 'error' => 'Game service not available'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('game_service_unavailable', $lang)], 500);
         return;
       }
 
@@ -1430,15 +1439,16 @@ final class AdminController {
    */
   public function getBatchStatistics(): void
   {
+    $lang = LanguageDetector::detect();
     try {
       if (!$this->batchRepo) {
-        Response::json(['ok' => false, 'error' => 'Repositorio de batch no disponible'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('batch_repo_unavailable', $lang)], 500);
         return;
       }
 
       $pdo = $this->questions->getPdo();
       if (!$pdo) {
-        Response::json(['ok' => false, 'error' => 'Database connection failed'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('database_connection_failed', $lang)], 500);
         return;
       }
 
@@ -1488,6 +1498,7 @@ final class AdminController {
    * @return void
    */
   public function indexAdmins(): void {
+    $lang = LanguageDetector::detect();
     if (!$this->adminRepo) {
       Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
       return;
@@ -1521,6 +1532,7 @@ final class AdminController {
    * @return void
    */
   public function showAdmin(array $params): void {
+    $lang = LanguageDetector::detect();
     if (!$this->adminRepo) {
       Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
       return;
@@ -1559,6 +1571,7 @@ final class AdminController {
    * @return void
    */
   public function storeAdmin(): void {
+    $lang = LanguageDetector::detect();
     if (!$this->adminRepo) {
       Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
       return;
@@ -1623,6 +1636,7 @@ final class AdminController {
    * @return void
    */
   public function updateAdmin(array $params): void {
+    $lang = LanguageDetector::detect();
     if (!$this->adminRepo) {
       Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
       return;
@@ -1720,6 +1734,7 @@ final class AdminController {
    * @return void
    */
   public function destroyAdmin(array $params): void {
+    $lang = LanguageDetector::detect();
     if (!$this->adminRepo) {
       Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
       return;
@@ -1776,6 +1791,7 @@ final class AdminController {
    * @return void
    */
   public function toggleAdminStatus(array $params): void {
+    $lang = LanguageDetector::detect();
     if (!$this->adminRepo) {
       Response::json(['ok' => false, 'error' => 'Admin repository not available'], 500);
       return;
@@ -1824,10 +1840,10 @@ final class AdminController {
       Response::json([
         'ok' => true,
         'admin' => $updatedAdmin->toArray(),
-        'message' => 'Admin status updated successfully'
+        'message' => Translations::get('admin_status_updated', $lang)
       ], 200);
     } catch (\Exception $e) {
-      Response::json(['ok' => false, 'error' => 'Failed to update admin status: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('failed_to_update_admin_status', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 }

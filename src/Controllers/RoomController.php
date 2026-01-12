@@ -7,6 +7,8 @@ use Src\Services\RoomService;
 use Src\Services\ExportService;
 use Src\Services\ValidationService;
 use Src\Utils\Response;
+use Src\Utils\Translations;
+use Src\Utils\LanguageDetector;
 
 final class RoomController {
   public function __construct(
@@ -131,17 +133,18 @@ final class RoomController {
    * }
    */
   public function update(array $params): void {
+    $lang = LanguageDetector::detect();
     $roomId = (int)($params['id'] ?? 0);
 
     if ($roomId <= 0) {
-      Response::json(['ok' => false, 'error' => 'ID de sala inválido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_room_id', $lang)], 400);
       return;
     }
 
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
 
     if (empty($data)) {
-      Response::json(['ok' => false, 'error' => 'No se proporcionaron datos para actualizar'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('no_data_provided', $lang)], 400);
       return;
     }
 
@@ -152,16 +155,16 @@ final class RoomController {
         $room = $this->roomService->getRoom($roomId);
         Response::json([
           'ok' => true,
-          'message' => 'Sala actualizada exitosamente',
+          'message' => Translations::get('room_updated', $lang),
           'room' => $room
         ]);
       } else {
-        Response::json(['ok' => false, 'error' => 'No se pudo actualizar la sala'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('failed_to_update_room', $lang)], 500);
       }
     } catch (\RuntimeException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 404);
     } catch (\Exception $e) {
-      Response::json(['ok' => false, 'error' => 'Error al actualizar sala: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('failed_to_update_room', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -172,23 +175,24 @@ final class RoomController {
    * Body: { "status": "active" | "paused" | "closed" }
    */
   public function updateStatus(array $params): void {
+    $lang = LanguageDetector::detect();
     $roomId = (int)($params['id'] ?? 0);
 
     if ($roomId <= 0) {
-      Response::json(['ok' => false, 'error' => 'ID de sala inválido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_room_id', $lang)], 400);
       return;
     }
 
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
 
     if (!isset($data['status'])) {
-      Response::json(['ok' => false, 'error' => 'Estado requerido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('status_required', $lang)], 400);
       return;
     }
 
     $validStatuses = ['active', 'paused', 'closed'];
     if (!in_array($data['status'], $validStatuses)) {
-      Response::json(['ok' => false, 'error' => 'Estado inválido. Valores válidos: active, paused, closed'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_status', $lang)], 400);
       return;
     }
 
@@ -199,18 +203,18 @@ final class RoomController {
         $room = $this->roomService->getRoom($roomId);
         Response::json([
           'ok' => true,
-          'message' => 'Estado de sala actualizado',
+          'message' => Translations::get('room_status_updated', $lang),
           'room' => $room
         ]);
       } else {
-        Response::json(['ok' => false, 'error' => 'No se pudo actualizar el estado'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('failed_to_update_status', $lang)], 500);
       }
     } catch (\RuntimeException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 404);
     } catch (\InvalidArgumentException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 400);
     } catch (\Exception $e) {
-      Response::json(['ok' => false, 'error' => 'Error al actualizar estado: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('failed_to_update_status', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -220,10 +224,11 @@ final class RoomController {
    * Endpoint: DELETE /admin/rooms/{id}
    */
   public function delete(array $params): void {
+    $lang = LanguageDetector::detect();
     $roomId = (int)($params['id'] ?? 0);
 
     if ($roomId <= 0) {
-      Response::json(['ok' => false, 'error' => 'ID de sala inválido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_room_id', $lang)], 400);
       return;
     }
 
@@ -233,15 +238,15 @@ final class RoomController {
       if ($success) {
         Response::json([
           'ok' => true,
-          'message' => 'Sala eliminada exitosamente'
+          'message' => Translations::get('room_deleted', $lang)
         ]);
       } else {
-        Response::json(['ok' => false, 'error' => 'No se pudo eliminar la sala'], 500);
+        Response::json(['ok' => false, 'error' => Translations::get('failed_to_delete_room', $lang)], 500);
       }
     } catch (\RuntimeException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 404);
     } catch (\Exception $e) {
-      Response::json(['ok' => false, 'error' => 'Error al eliminar sala: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('failed_to_delete_room', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -251,10 +256,11 @@ final class RoomController {
    * Endpoint: GET /admin/rooms/{id}/players
    */
   public function getPlayers(array $params): void {
+    $lang = LanguageDetector::detect();
     $roomId = (int)($params['id'] ?? 0);
 
     if ($roomId <= 0) {
-      Response::json(['ok' => false, 'error' => 'ID de sala inválido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_room_id', $lang)], 400);
       return;
     }
 
@@ -270,7 +276,7 @@ final class RoomController {
     } catch (\RuntimeException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 404);
     } catch (\Exception $e) {
-      Response::json(['ok' => false, 'error' => 'Error al obtener jugadores: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('failed_to_fetch_players', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -307,10 +313,11 @@ final class RoomController {
    * Endpoint: GET /admin/rooms/{id}/stats
    */
   public function getStats(array $params): void {
+    $lang = LanguageDetector::detect();
     $roomId = (int)($params['id'] ?? 0);
 
     if ($roomId <= 0) {
-      Response::json(['ok' => false, 'error' => 'ID de sala inválido'], 400);
+      Response::json(['ok' => false, 'error' => Translations::get('invalid_room_id', $lang)], 400);
       return;
     }
 
@@ -324,7 +331,7 @@ final class RoomController {
     } catch (\RuntimeException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 404);
     } catch (\Exception $e) {
-      Response::json(['ok' => false, 'error' => 'Error al obtener estadísticas: ' . $e->getMessage()], 500);
+      Response::json(['ok' => false, 'error' => Translations::get('failed_to_fetch_stats', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
