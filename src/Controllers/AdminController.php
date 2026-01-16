@@ -1060,6 +1060,163 @@ final class AdminController {
   }
 
   /**
+   * Desverificación masiva de preguntas
+   *
+   * Endpoint: POST /admin/questions/unverify-bulk
+   *
+   * @return void
+   */
+  public function unverifyBulk(): void
+  {
+    $lang = LanguageDetector::detect();
+
+    try {
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok' => false, 'error' => Translations::get('database_connection_failed', $lang)], 500);
+        return;
+      }
+
+      $stmt = $pdo->prepare("UPDATE questions SET admin_verified = 0 WHERE admin_verified = 1");
+      $stmt->execute();
+      $unverifiedCount = $stmt->rowCount();
+
+      // Registrar en logs
+      $logSQL = "INSERT INTO admin_system_logs (action, entity_table, entity_id, details, logged_at)
+                 VALUES (:action, :entity_table, :entity_id, :details, NOW())";
+      $logSt = $pdo->prepare($logSQL);
+      $logSt->execute([
+        ':action' => 'bulk_unverify',
+        ':entity_table' => 'questions',
+        ':entity_id' => 0,
+        ':details' => json_encode(['unverified_count' => $unverifiedCount])
+      ]);
+
+      Response::json([
+        'ok' => true,
+        'message' => $unverifiedCount > 0
+          ? "$unverifiedCount " . Translations::get('questions_unverified_successfully', $lang)
+          : Translations::get('no_verified_questions', $lang),
+        'unverified_count' => $unverifiedCount
+      ], 200);
+
+    } catch (\Exception $e) {
+      error_log("Error in bulk unverification: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => Translations::get('error_unverifying_questions', $lang) . ': ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Eliminación masiva de preguntas
+   *
+   * Endpoint: POST /admin/questions/delete-bulk
+   * Body: { "delete_all_pending": true } O { "question_ids": [1, 2, 3...] } O { "batch_id": 5 }
+   *
+   * @return void
+   */
+  public function deleteBulk(): void
+  {
+    $lang = LanguageDetector::detect();
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+
+    try {
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok' => false, 'error' => Translations::get('database_connection_failed', $lang)], 500);
+        return;
+      }
+
+      $deletedCount = 0;
+      $questionIdsToDelete = [];
+
+      // Opción 1: Eliminar todas las pendientes (no verificadas)
+      if (isset($data['delete_all_pending']) && $data['delete_all_pending'] === true) {
+        $stmt = $pdo->prepare("SELECT id FROM questions WHERE admin_verified = 0");
+        $stmt->execute();
+        $questionIdsToDelete = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+      }
+      // Opción 2: Eliminar IDs específicos
+      elseif (isset($data['question_ids']) && is_array($data['question_ids']) && !empty($data['question_ids'])) {
+        $questionIdsToDelete = array_map('intval', $data['question_ids']);
+      }
+      // Opción 3: Eliminar por batch_id
+      elseif (isset($data['batch_id']) && is_numeric($data['batch_id'])) {
+        $batchId = (int)$data['batch_id'];
+        $stmt = $pdo->prepare("SELECT id FROM questions WHERE batch_id = :batch_id");
+        $stmt->execute([':batch_id' => $batchId]);
+        $questionIdsToDelete = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+      }
+      else {
+        Response::json(['ok' => false, 'error' => Translations::get('must_specify_deletion_method', $lang)], 400);
+        return;
+      }
+
+      // Eliminar las preguntas
+      if (!empty($questionIdsToDelete)) {
+        $placeholders = implode(',', array_fill(0, count($questionIdsToDelete), '?'));
+
+        // 1. Eliminar player_answers que referencian las opciones de estas preguntas
+        $stmt = $pdo->prepare("DELETE FROM player_answers WHERE question_id IN ($placeholders)");
+        $stmt->execute($questionIdsToDelete);
+
+        // 2. Eliminar las opciones relacionadas
+        $stmt = $pdo->prepare("DELETE FROM question_options WHERE question_id IN ($placeholders)");
+        $stmt->execute($questionIdsToDelete);
+
+        // 3. Eliminar las explicaciones relacionadas
+        $stmt = $pdo->prepare("DELETE FROM question_explanations WHERE question_id IN ($placeholders)");
+        $stmt->execute($questionIdsToDelete);
+
+        // 4. Finalmente eliminar las preguntas
+        $stmt = $pdo->prepare("DELETE FROM questions WHERE id IN ($placeholders)");
+        $stmt->execute($questionIdsToDelete);
+        $deletedCount = $stmt->rowCount();
+
+        // Si se eliminó por batch, actualizar contadores del batch
+        if (isset($data['batch_id']) && $this->batchRepo) {
+          $batchId = (int)$data['batch_id'];
+          // Verificar si el batch quedó vacío
+          $stmt = $pdo->prepare("SELECT COUNT(*) FROM questions WHERE batch_id = :batch_id");
+          $stmt->execute([':batch_id' => $batchId]);
+          $remaining = (int)$stmt->fetchColumn();
+
+          if ($remaining === 0) {
+            // Eliminar el batch si no tiene preguntas
+            $stmt = $pdo->prepare("DELETE FROM question_batches WHERE id = :batch_id");
+            $stmt->execute([':batch_id' => $batchId]);
+          }
+        }
+      }
+
+      // Registrar en logs
+      $logSQL = "INSERT INTO admin_system_logs (action, entity_table, entity_id, details, logged_at)
+                 VALUES (:action, :entity_table, :entity_id, :details, NOW())";
+      $logSt = $pdo->prepare($logSQL);
+      $logSt->execute([
+        ':action' => 'bulk_delete',
+        ':entity_table' => 'questions',
+        ':entity_id' => 0,
+        ':details' => json_encode([
+          'deleted_count' => $deletedCount,
+          'method' => isset($data['delete_all_pending']) ? 'all_pending' : (isset($data['batch_id']) ? 'by_batch' : 'by_ids')
+        ])
+      ]);
+
+      Response::json([
+        'ok' => true,
+        'message' => $deletedCount > 0
+          ? "$deletedCount " . Translations::get('questions_deleted_successfully', $lang)
+          : Translations::get('no_questions_to_delete', $lang),
+        'deleted_count' => $deletedCount
+      ], 200);
+
+    } catch (\Exception $e) {
+      error_log("Error in bulk deletion: " . $e->getMessage());
+      Response::json(['ok' => false, 'error' => Translations::get('error_deleting_questions', $lang) . ': ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
    * Importa preguntas desde archivo CSV
    *
    * Endpoint: POST /admin/batch/import-csv

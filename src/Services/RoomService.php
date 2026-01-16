@@ -212,13 +212,13 @@ final class RoomService
     return [
       'room' => $this->formatRoomResponse($room),
       'statistics' => [
-        'total_sessions' => (int)$stats['total_sessions'],
-        'unique_players' => (int)$stats['unique_players'],
-        'total_answers' => (int)$stats['total_answers'],
-        'avg_accuracy' => (float)$stats['avg_accuracy'],
-        'avg_time_sec' => (float)$stats['avg_time_sec'],
-        'highest_score' => (int)$stats['highest_score'],
-        'avg_score' => (float)$stats['avg_score']
+        'total_sessions' => (int)($stats['total_sessions'] ?? 0),
+        'unique_players' => (int)($stats['unique_players'] ?? 0),
+        'total_answers' => (int)($stats['total_answers'] ?? 0),
+        'avg_accuracy' => (float)($stats['avg_accuracy'] ?? 0),
+        'avg_time_sec' => (float)($stats['avg_time_sec'] ?? 0),
+        'highest_score' => (int)($stats['highest_score'] ?? 0),
+        'avg_score' => (float)($stats['avg_score'] ?? 0)
       ]
     ];
   }

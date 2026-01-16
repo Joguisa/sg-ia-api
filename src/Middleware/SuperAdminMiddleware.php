@@ -9,29 +9,28 @@ use Src\Utils\Response;
 /**
  * SuperAdminMiddleware
  * Validates that the authenticated user has superadmin role
- * Must be used after AuthMiddleware
+ * Includes authentication validation (no need to chain with AuthMiddleware)
  */
 final class SuperAdminMiddleware {
   private AuthService $authService;
+  private AuthMiddleware $authMiddleware;
 
   public function __construct(AuthService $authService) {
     $this->authService = $authService;
+    $this->authMiddleware = new AuthMiddleware($authService);
   }
 
   /**
-   * Validates that the current user is a superadmin
-   * Requires AuthMiddleware to be run first
+   * Validates authentication and superadmin role
    *
-   * @return bool|void Returns true if valid, exits with 403 if not
+   * @return bool|void Returns true if valid, exits with 401/403 if not
    */
   public function validate(): bool {
-    // Check if admin is authenticated (set by AuthMiddleware)
-    $admin = $_SERVER['ADMIN'] ?? null;
+    // First, validate authentication (this sets $_SERVER['ADMIN'])
+    $this->authMiddleware->validate();
 
-    if (!$admin) {
-      Response::json(['ok' => false, 'error' => 'Authentication required'], 401);
-      exit;
-    }
+    // Get authenticated admin
+    $admin = $_SERVER['ADMIN'] ?? null;
 
     // Check if admin has superadmin role
     if (($admin['role'] ?? '') !== 'superadmin') {

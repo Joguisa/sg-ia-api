@@ -159,6 +159,8 @@ $router->add('GET','/admin/dashboard', fn()=> $adminCtrl->dashboardStats(), fn()
 // Batch Management & Verification
 $router->add('POST','/admin/batch/{batchId}/verify', fn($p)=> $adminCtrl->verifyBatch($p), fn()=> $authMiddleware->validate());
 $router->add('POST','/admin/questions/verify-bulk', fn()=> $adminCtrl->verifyBulk(), fn()=> $authMiddleware->validate());
+$router->add('POST','/admin/questions/unverify-bulk', fn()=> $adminCtrl->unverifyBulk(), fn()=> $authMiddleware->validate());
+$router->add('POST','/admin/questions/delete-bulk', fn()=> $adminCtrl->deleteBulk(), fn()=> $authMiddleware->validate());
 $router->add('POST','/admin/batch/import-csv', fn()=> $adminCtrl->importCSV(), fn()=> $authMiddleware->validate());
 $router->add('GET','/admin/unverified', fn()=> $adminCtrl->getUnverifiedQuestions(), fn()=> $authMiddleware->validate());
 $router->add('PUT','/admin/explanation/{explanationId}', fn($p)=> $adminCtrl->editExplanation($p), fn()=> $authMiddleware->validate());

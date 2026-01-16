@@ -179,16 +179,21 @@ final class RoomRepository implements RoomRepositoryInterface {
       throw new \InvalidArgumentException("Estado inválido: $status");
     }
 
-    $st = $this->db->pdo()->prepare(
-      "UPDATE game_rooms SET status = :status,
-       started_at = CASE WHEN :status = 'active' AND started_at IS NULL THEN NOW() ELSE started_at END,
-       ended_at = CASE WHEN :status2 = 'closed' THEN NOW() ELSE ended_at END
-       WHERE id = :id"
-    );
+    $sql = "UPDATE game_rooms SET status = :status";
 
+    if ($status === 'active') {
+      $sql .= ", started_at = COALESCE(started_at, NOW())";
+    }
+
+    if ($status === 'closed') {
+      $sql .= ", ended_at = NOW()";
+    }
+
+    $sql .= " WHERE id = :id";
+
+    $st = $this->db->pdo()->prepare($sql);
     return $st->execute([
       ':status' => $status,
-      ':status2' => $status,
       ':id' => $id
     ]);
   }

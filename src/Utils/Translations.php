@@ -138,6 +138,13 @@ class Translations {
       'error_verifying_questions' => 'Error al verificar preguntas',
       'questions_verified' => 'preguntas verificadas',
       'error_verifying_batch' => 'Error al verificar batch',
+      'must_specify_deletion_method' => 'Debe especificar delete_all_pending, question_ids o batch_id',
+      'questions_deleted_successfully' => 'pregunta(s) eliminada(s) exitosamente',
+      'no_questions_to_delete' => 'No hay preguntas para eliminar',
+      'error_deleting_questions' => 'Error al eliminar preguntas',
+      'questions_unverified_successfully' => 'pregunta(s) desverificada(s) exitosamente',
+      'no_verified_questions' => 'No hay preguntas verificadas',
+      'error_unverifying_questions' => 'Error al desverificar preguntas',
 
       // ========== PLAYERS ==========
       'invalid_player_id' => 'ID de jugador inválido',
@@ -364,6 +371,13 @@ class Translations {
       'error_verifying_questions' => 'Error verifying questions',
       'questions_verified' => 'questions verified',
       'error_verifying_batch' => 'Error verifying batch',
+      'must_specify_deletion_method' => 'Must specify delete_all_pending, question_ids or batch_id',
+      'questions_deleted_successfully' => 'question(s) deleted successfully',
+      'no_questions_to_delete' => 'No questions to delete',
+      'error_deleting_questions' => 'Error deleting questions',
+      'questions_unverified_successfully' => 'question(s) unverified successfully',
+      'no_verified_questions' => 'No verified questions',
+      'error_unverifying_questions' => 'Error unverifying questions',
 
       // ========== PLAYERS ==========
       'invalid_player_id' => 'Invalid player ID',
