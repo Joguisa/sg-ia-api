@@ -57,104 +57,115 @@ final class ExportService {
     // Add first page
     $pdf->AddPage();
 
+    // ===== HEADER SECTION =====
+    $headerY = $pdf->GetY();
+
+    // Header background box
+    $pdf->SetFillColor(13, 71, 161);
+    $pdf->Rect(15, $headerY, 180, 28, 'F');
+
     // Title
-    $pdf->SetFont('helvetica', 'B', 20);
-    $pdf->SetTextColor(102, 126, 234);
-    $pdf->Cell(0, 15, Translations::get('room_report', $language), 0, 1, 'C');
+    $pdf->SetFont('helvetica', 'B', 18);
+    $pdf->SetTextColor(255, 255, 255);
+    $pdf->SetY($headerY + 4);
+    $pdf->Cell(0, 10, Translations::get('room_report', $language), 0, 1, 'C');
 
-    // Room info
-    $pdf->SetFont('helvetica', 'B', 14);
-    $pdf->SetTextColor(0, 0, 0);
-    $pdf->Cell(0, 10, $roomData['name'] ?? Translations::get('no_name', $language), 0, 1, 'C');
-
+    // Room name
     $pdf->SetFont('helvetica', '', 12);
-    $pdf->SetTextColor(100, 100, 100);
-    $pdf->Cell(0, 8, Translations::get('code', $language) . ': ' . ($roomData['room_code'] ?? 'N/A'), 0, 1, 'C');
-    $pdf->Cell(0, 8, Translations::get('status', $language) . ': ' . $this->translateStatus($roomData['status'] ?? 'unknown', $language), 0, 1, 'C');
+    $pdf->Cell(0, 8, $roomData['name'] ?? Translations::get('no_name', $language), 0, 1, 'C');
 
+    $pdf->SetY($headerY + 32);
+
+    // ===== ROOM INFO CARD =====
+    $cardY = $pdf->GetY();
+    $pdf->SetFillColor(248, 250, 252);
+    $pdf->Rect(15, $cardY, 180, 24, 'F');
+    $pdf->SetDrawColor(229, 231, 235);
+    $pdf->Rect(15, $cardY, 180, 24, 'D');
+
+    $pdf->SetY($cardY + 4);
+
+    // Code and Status in same row
+    $pdf->SetFont('helvetica', '', 10);
+    $pdf->SetTextColor(100, 100, 100);
+    $pdf->Cell(90, 7, Translations::get('code', $language) . ':', 0, 0, 'R');
+    $pdf->SetFont('helvetica', 'B', 10);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Cell(90, 7, ' ' . ($roomData['room_code'] ?? 'N/A'), 0, 1, 'L');
+
+    $pdf->SetFont('helvetica', '', 10);
+    $pdf->SetTextColor(100, 100, 100);
+    $pdf->Cell(90, 7, Translations::get('status', $language) . ':', 0, 0, 'R');
+    $pdf->SetFont('helvetica', 'B', 10);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Cell(90, 7, ' ' . $this->translateStatus($roomData['status'] ?? 'unknown', $language), 0, 1, 'L');
+
+    $pdf->SetY($cardY + 28);
+
+    // Description if exists
     if (!empty($roomData['description'])) {
-      $pdf->Ln(5);
-      $pdf->SetFont('helvetica', 'I', 10);
-      $pdf->MultiCell(0, 6, $roomData['description'], 0, 'C');
+      $pdf->SetFont('helvetica', 'I', 9);
+      $pdf->SetTextColor(100, 100, 100);
+      $pdf->MultiCell(0, 5, $roomData['description'], 0, 'C');
+      $pdf->Ln(3);
     }
 
-    $pdf->Ln(10);
+    $pdf->Ln(5);
 
-    // General Statistics Section
-    $pdf->SetFont('helvetica', 'B', 14);
-    $pdf->SetTextColor(102, 126, 234);
-    $pdf->Cell(0, 10, Translations::get('general_stats', $language), 0, 1, 'L');
-
-    $pdf->SetFont('helvetica', '', 11);
-    $pdf->SetTextColor(0, 0, 0);
+    // ===== GENERAL STATISTICS SECTION =====
+    // Section header with line
+    $pdf->SetFont('helvetica', 'B', 12);
+    $pdf->SetTextColor(13, 71, 161);
+    $pdf->Cell(0, 8, Translations::get('general_stats', $language), 0, 1, 'L');
+    $pdf->SetDrawColor(13, 71, 161);
+    $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
+    $pdf->Ln(3);
 
     // Stats puede venir como ['statistics' => [...]] o directamente
     $statsData = $stats['statistics'] ?? $stats;
 
-    $this->addStatRow($pdf, Translations::get('total_players', $language), $statsData['unique_players'] ?? 0);
-    $this->addStatRow($pdf, Translations::get('total_sessions', $language), $statsData['total_sessions'] ?? 0);
-    $this->addStatRow($pdf, Translations::get('total_answers', $language), $statsData['total_answers'] ?? 0);
-    $this->addStatRow($pdf, Translations::get('avg_accuracy', $language), ($statsData['avg_accuracy'] ?? 0) . '%');
-    $this->addStatRow($pdf, Translations::get('highest_score', $language), $statsData['highest_score'] ?? 0);
+    // Stats grid (2 columns)
+    $pdf->SetFont('helvetica', '', 10);
+    $pdf->SetTextColor(0, 0, 0);
 
-    $pdf->Ln(10);
+    $statsY = $pdf->GetY();
+
+    // Column 1
+    $this->addStatCard($pdf, 15, $statsY, Translations::get('total_players', $language), (string)($statsData['unique_players'] ?? 0));
+    $this->addStatCard($pdf, 15, $statsY + 18, Translations::get('total_sessions', $language), (string)($statsData['total_sessions'] ?? 0));
+    $this->addStatCard($pdf, 15, $statsY + 36, Translations::get('total_answers', $language), (string)($statsData['total_answers'] ?? 0));
+
+    // Column 2
+    $this->addStatCard($pdf, 105, $statsY, Translations::get('avg_accuracy', $language), ($statsData['avg_accuracy'] ?? 0) . '%');
+    $this->addStatCard($pdf, 105, $statsY + 18, Translations::get('highest_score', $language), (string)($statsData['highest_score'] ?? 0));
+
+    $pdf->SetY($statsY + 56);
+    $pdf->Ln(3);
 
     // Player Statistics Section
     if (!empty($playerStats)) {
-      $pdf->SetFont('helvetica', 'B', 14);
-      $pdf->SetTextColor(102, 126, 234);
-      $pdf->Cell(0, 10, Translations::get('player_stats', $language), 0, 1, 'L');
-
+      $this->addSectionHeader($pdf, Translations::get('player_stats', $language));
       $this->addPlayerTable($pdf, $playerStats, $language);
-      $pdf->Ln(5);
     }
 
     // Question Analysis Section (Top 5 hardest and easiest)
     if (!empty($questionAnalysis['top_hardest']) || !empty($questionAnalysis['top_easiest'])) {
-      if ($pdf->GetY() > 180) {
-        $pdf->AddPage();
-      } else {
-        $pdf->Ln(10);
-      }
-
-      $pdf->SetFont('helvetica', 'B', 14);
-      $pdf->SetTextColor(102, 126, 234);
-      $pdf->Cell(0, 10, Translations::get('question_analysis', $language), 0, 1, 'L');
-
+      $this->checkPageBreak($pdf, 80);
+      $this->addSectionHeader($pdf, Translations::get('question_analysis', $language));
       $this->addQuestionAnalysisSection($pdf, $questionAnalysis, $language);
-      $pdf->Ln(5);
     }
 
     // Question Statistics Section (Top 10 errors)
     if (!empty($questionStats)) {
-      // Check if we need a new page (if less than 60mm available)
-      if ($pdf->GetY() > 220) {
-        $pdf->AddPage();
-      } else {
-        $pdf->Ln(10);
-      }
-
-      $pdf->SetFont('helvetica', 'B', 14);
-      $pdf->SetTextColor(102, 126, 234);
-      $pdf->Cell(0, 10, Translations::get('high_error_questions', $language), 0, 1, 'L');
-
+      $this->checkPageBreak($pdf, 60);
+      $this->addSectionHeader($pdf, Translations::get('high_error_questions', $language));
       $this->addQuestionTable($pdf, array_slice($questionStats, 0, 10), $language);
-      $pdf->Ln(5);
     }
 
     // Category Statistics Section
     if (!empty($categoryStats)) {
-      // Check if we need a new page
-      if ($pdf->GetY() > 220) {
-        $pdf->AddPage();
-      } else {
-        $pdf->Ln(10);
-      }
-
-      $pdf->SetFont('helvetica', 'B', 14);
-      $pdf->SetTextColor(102, 126, 234);
-      $pdf->Cell(0, 10, Translations::get('category_stats', $language), 0, 1, 'L');
-
+      $this->checkPageBreak($pdf, 60);
+      $this->addSectionHeader($pdf, Translations::get('category_stats', $language));
       $this->addCategoryTable($pdf, $categoryStats, $language);
     }
 
@@ -263,7 +274,7 @@ final class ExportService {
         $playerSheet->getStyle($col . '1')->getFont()->setBold(true);
         $playerSheet->getStyle($col . '1')->getFill()
           ->setFillType(Fill::FILL_SOLID)
-          ->getStartColor()->setRGB('667EEA');
+          ->getStartColor()->setRGB('0D47A1');
         $playerSheet->getStyle($col . '1')->getFont()->getColor()->setRGB('FFFFFF');
         $col++;
       }
@@ -272,11 +283,11 @@ final class ExportService {
       $row = 2;
       foreach ($playerStats as $player) {
         $totalAnswers = (int)($player['total_answers'] ?? 0);
-        $accuracy = (float)($player['accuracy_percent'] ?? 0);
+        $accuracy = (float)($player['accuracy'] ?? 0);
         $correctAnswers = (int)round($totalAnswers * $accuracy / 100);
 
         $playerSheet->setCellValue('A' . $row, $player['player_name'] ?? 'N/A');
-        $playerSheet->setCellValue('B' . $row, $player['sessions_played'] ?? 0);
+        $playerSheet->setCellValue('B' . $row, $player['total_sessions'] ?? 0);
         $playerSheet->setCellValue('C' . $row, $totalAnswers);
         $playerSheet->setCellValue('D' . $row, $correctAnswers);
         $playerSheet->setCellValue('E' . $row, $accuracy);
@@ -308,7 +319,7 @@ final class ExportService {
         $questionSheet->getStyle($col . '1')->getFont()->setBold(true);
         $questionSheet->getStyle($col . '1')->getFill()
           ->setFillType(Fill::FILL_SOLID)
-          ->getStartColor()->setRGB('667EEA');
+          ->getStartColor()->setRGB('0D47A1');
         $questionSheet->getStyle($col . '1')->getFont()->getColor()->setRGB('FFFFFF');
         $col++;
       }
@@ -347,7 +358,7 @@ final class ExportService {
         $categorySheet->getStyle($col . '1')->getFont()->setBold(true);
         $categorySheet->getStyle($col . '1')->getFill()
           ->setFillType(Fill::FILL_SOLID)
-          ->getStartColor()->setRGB('667EEA');
+          ->getStartColor()->setRGB('0D47A1');
         $categorySheet->getStyle($col . '1')->getFont()->getColor()->setRGB('FFFFFF');
         $col++;
       }
@@ -356,8 +367,8 @@ final class ExportService {
       $row = 2;
       foreach ($categoryStats as $category) {
         $totalAnswers = (int)($category['total_answers'] ?? 0);
-        $accuracy = (float)($category['accuracy_percent'] ?? 0);
-        $correctCount = (int)round($totalAnswers * $accuracy / 100);
+        $accuracy = (float)($category['accuracy'] ?? 0);
+        $correctCount = (int)($category['correct_count'] ?? 0);
 
         $categorySheet->setCellValue('A' . $row, $category['category_name'] ?? 'N/A');
         $categorySheet->setCellValue('B' . $row, $totalAnswers);
@@ -464,13 +475,51 @@ final class ExportService {
   }
 
   /**
-   * Adds a stat row to PDF.
+   * Adds a stat card with label and value.
    */
-  private function addStatRow(TCPDF $pdf, string $label, $value): void {
-    $pdf->SetFont('helvetica', '', 11);
-    $pdf->Cell(70, 8, $label . ':', 0, 0, 'L');
+  private function addStatCard(TCPDF $pdf, float $x, float $y, string $label, string $value): void {
+    $width = 85;
+    $height = 16;
+
+    // Card background
+    $pdf->SetFillColor(248, 250, 252);
+    $pdf->Rect($x, $y, $width, $height, 'F');
+    $pdf->SetDrawColor(229, 231, 235);
+    $pdf->Rect($x, $y, $width, $height, 'D');
+
+    // Label
+    $pdf->SetXY($x + 3, $y + 2);
+    $pdf->SetFont('helvetica', '', 8);
+    $pdf->SetTextColor(100, 100, 100);
+    $pdf->Cell($width - 6, 5, $label, 0, 1, 'L');
+
+    // Value
+    $pdf->SetXY($x + 3, $y + 8);
     $pdf->SetFont('helvetica', 'B', 11);
-    $pdf->Cell(50, 8, (string)$value, 0, 1, 'L');
+    $pdf->SetTextColor(13, 71, 161);
+    $pdf->Cell($width - 6, 6, $value, 0, 1, 'L');
+  }
+
+  /**
+   * Adds a section header with underline.
+   */
+  private function addSectionHeader(TCPDF $pdf, string $title): void {
+    $pdf->Ln(5);
+    $pdf->SetFont('helvetica', 'B', 12);
+    $pdf->SetTextColor(13, 71, 161);
+    $pdf->Cell(0, 8, $title, 0, 1, 'L');
+    $pdf->SetDrawColor(13, 71, 161);
+    $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
+    $pdf->Ln(3);
+  }
+
+  /**
+   * Checks if page break is needed and adds new page if necessary.
+   */
+  private function checkPageBreak(TCPDF $pdf, int $requiredSpace): void {
+    if ($pdf->GetY() > (297 - 15 - $requiredSpace)) {
+      $pdf->AddPage();
+    }
   }
 
   /**
@@ -478,7 +527,7 @@ final class ExportService {
    */
   private function addPlayerTable(TCPDF $pdf, array $players, string $language): void {
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->SetFillColor(102, 126, 234);
+    $pdf->SetFillColor(13, 71, 161);
     $pdf->SetTextColor(255, 255, 255);
 
     // Headers
@@ -498,11 +547,11 @@ final class ExportService {
       $pdf->SetFillColor(245, 247, 250);
       $name = mb_substr($player['player_name'] ?? 'N/A', 0, 20);
       $totalAnswers = (int)($player['total_answers'] ?? 0);
-      $accuracy = (float)($player['accuracy_percent'] ?? 0);
+      $accuracy = (float)($player['accuracy'] ?? 0);
       $correctAnswers = (int)round($totalAnswers * $accuracy / 100);
 
       $pdf->Cell(45, 6, $name, 1, 0, 'L', $fill);
-      $pdf->Cell(25, 6, (string)($player['sessions_played'] ?? 0), 1, 0, 'C', $fill);
+      $pdf->Cell(25, 6, (string)($player['total_sessions'] ?? 0), 1, 0, 'C', $fill);
       $pdf->Cell(25, 6, (string)$totalAnswers, 1, 0, 'C', $fill);
       $pdf->Cell(25, 6, (string)$correctAnswers, 1, 0, 'C', $fill);
       $pdf->Cell(30, 6, $accuracy . '%', 1, 0, 'C', $fill);
@@ -517,7 +566,7 @@ final class ExportService {
    */
   private function addQuestionTable(TCPDF $pdf, array $questions, string $language): void {
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->SetFillColor(102, 126, 234);
+    $pdf->SetFillColor(13, 71, 161);
     $pdf->SetTextColor(255, 255, 255);
 
     // Headers
@@ -553,7 +602,7 @@ final class ExportService {
 
         // Re-draw headers on new page
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->SetFillColor(102, 126, 234);
+        $pdf->SetFillColor(13, 71, 161);
         $pdf->SetTextColor(255, 255, 255);
         $pdf->Cell(110, 7, Translations::get('question', $language), 1, 0, 'C', true);
         $pdf->Cell(35, 7, Translations::get('times_answered', $language), 1, 0, 'C', true);
@@ -580,7 +629,7 @@ final class ExportService {
    */
   private function addCategoryTable(TCPDF $pdf, array $categories, string $language): void {
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->SetFillColor(102, 126, 234);
+    $pdf->SetFillColor(13, 71, 161);
     $pdf->SetTextColor(255, 255, 255);
 
     // Headers
@@ -598,8 +647,8 @@ final class ExportService {
       $pdf->SetFillColor(245, 247, 250);
       $name = mb_substr($category['category_name'] ?? 'N/A', 0, 22);
       $totalAnswers = (int)($category['total_answers'] ?? 0);
-      $accuracy = (float)($category['accuracy_percent'] ?? 0);
-      $correctCount = (int)round($totalAnswers * $accuracy / 100);
+      $accuracy = (float)($category['accuracy'] ?? 0);
+      $correctCount = (int)($category['correct_count'] ?? 0);
 
       $startX = $pdf->GetX();
       $startY = $pdf->GetY();
@@ -653,7 +702,7 @@ final class ExportService {
   }
 
   /**
-   * Adds question analysis section (Top 5 hardest and easiest).
+   * Adds question analysis section (Top 5 hardest and easiest) with full question text.
    */
   private function addQuestionAnalysisSection(TCPDF $pdf, array $analysis, string $language): void {
     $topHardest = $analysis['top_hardest'] ?? [];
@@ -665,36 +714,7 @@ final class ExportService {
       $pdf->SetTextColor(231, 76, 60); // Red
       $pdf->Cell(0, 8, Translations::get('top_hardest_desc', $language), 0, 1, 'L');
 
-      $pdf->SetFont('helvetica', '', 9);
-      $pdf->SetTextColor(0, 0, 0);
-
-      foreach ($topHardest as $index => $question) {
-        $rank = $index + 1;
-        $statement = mb_substr($question['statement'] ?? 'N/A', 0, 80);
-        if (strlen($question['statement'] ?? '') > 80) {
-          $statement .= '...';
-        }
-        $successRate = (float)($question['success_rate'] ?? 0);
-        $timesAnswered = (int)($question['times_answered'] ?? 0);
-
-        // Rank circle
-        $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(8, 6, $rank . '.', 0, 0, 'C');
-
-        // Question text
-        $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(120, 6, $statement, 0, 0, 'L');
-
-        // Success rate with color
-        $this->addSuccessRateBadge($pdf, $successRate);
-
-        // Times answered
-        $pdf->SetFont('helvetica', '', 8);
-        $pdf->SetTextColor(100, 100, 100);
-        $pdf->Cell(25, 6, $timesAnswered . ' ' . Translations::get('resp_short', $language), 0, 1, 'R');
-        $pdf->SetTextColor(0, 0, 0);
-      }
-
+      $this->addAnalysisTable($pdf, $topHardest, $language, [231, 76, 60]);
       $pdf->Ln(5);
     }
 
@@ -704,55 +724,77 @@ final class ExportService {
       $pdf->SetTextColor(39, 174, 96); // Green
       $pdf->Cell(0, 8, Translations::get('top_easiest_desc', $language), 0, 1, 'L');
 
-      $pdf->SetFont('helvetica', '', 9);
-      $pdf->SetTextColor(0, 0, 0);
-
-      foreach ($topEasiest as $index => $question) {
-        $rank = $index + 1;
-        $statement = mb_substr($question['statement'] ?? 'N/A', 0, 80);
-        if (strlen($question['statement'] ?? '') > 80) {
-          $statement .= '...';
-        }
-        $successRate = (float)($question['success_rate'] ?? 0);
-        $timesAnswered = (int)($question['times_answered'] ?? 0);
-
-        // Rank
-        $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(8, 6, $rank . '.', 0, 0, 'C');
-
-        // Question text
-        $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(120, 6, $statement, 0, 0, 'L');
-
-        // Success rate with color
-        $this->addSuccessRateBadge($pdf, $successRate);
-
-        // Times answered
-        $pdf->SetFont('helvetica', '', 8);
-        $pdf->SetTextColor(100, 100, 100);
-        $pdf->Cell(25, 6, $timesAnswered . ' ' . Translations::get('resp_short', $language), 0, 1, 'R');
-        $pdf->SetTextColor(0, 0, 0);
-      }
+      $this->addAnalysisTable($pdf, $topEasiest, $language, [39, 174, 96]);
     }
   }
 
   /**
-   * Adds a colored success rate badge.
+   * Adds a table for question analysis with full question text and centered columns.
    */
-  private function addSuccessRateBadge(TCPDF $pdf, float $rate): void {
-    // Determine color based on rate
-    if ($rate >= 75) {
-      $pdf->SetFillColor(39, 174, 96); // Green
-    } elseif ($rate >= 50) {
-      $pdf->SetFillColor(243, 156, 18); // Orange
-    } else {
-      $pdf->SetFillColor(231, 76, 60); // Red
-    }
-
+  private function addAnalysisTable(TCPDF $pdf, array $questions, string $language, array $headerColor): void {
+    // Table header
+    $pdf->SetFont('helvetica', 'B', 9);
+    $pdf->SetFillColor($headerColor[0], $headerColor[1], $headerColor[2]);
     $pdf->SetTextColor(255, 255, 255);
-    $pdf->SetFont('helvetica', 'B', 8);
-    $pdf->Cell(25, 6, number_format($rate, 1) . '%', 0, 0, 'C', true);
+
+    $pdf->Cell(10, 7, '#', 1, 0, 'C', true);
+    $pdf->Cell(110, 7, Translations::get('question', $language), 1, 0, 'C', true);
+    $pdf->Cell(30, 7, Translations::get('answers', $language), 1, 0, 'C', true);
+    $pdf->Cell(30, 7, Translations::get('success_rate_percent', $language), 1, 1, 'C', true);
+
+    // Table data
+    $pdf->SetFont('helvetica', '', 9);
     $pdf->SetTextColor(0, 0, 0);
+    $fill = false;
+
+    foreach ($questions as $index => $question) {
+      $pdf->SetFillColor(245, 247, 250);
+      $rank = $index + 1;
+      $statement = $question['statement'] ?? 'N/A';
+      $timesAnswered = (string)($question['times_answered'] ?? 0);
+      $successRate = number_format((float)($question['success_rate'] ?? 0), 1) . '%';
+
+      // Calculate row height based on question text
+      $lineHeight = 5;
+      $questionWidth = 110;
+      $numLines = $pdf->getNumLines($statement, $questionWidth);
+      $rowHeight = max(7, $numLines * $lineHeight);
+
+      $startX = $pdf->GetX();
+      $startY = $pdf->GetY();
+
+      // Check for page break
+      if ($startY + $rowHeight > 270) {
+        $pdf->AddPage();
+        $startY = $pdf->GetY();
+
+        // Re-draw headers
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->SetFillColor($headerColor[0], $headerColor[1], $headerColor[2]);
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->Cell(10, 7, '#', 1, 0, 'C', true);
+        $pdf->Cell(110, 7, Translations::get('question', $language), 1, 0, 'C', true);
+        $pdf->Cell(30, 7, Translations::get('answers', $language), 1, 0, 'C', true);
+        $pdf->Cell(30, 7, Translations::get('success_rate_percent', $language), 1, 1, 'C', true);
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->SetTextColor(0, 0, 0);
+        $startX = $pdf->GetX();
+        $startY = $pdf->GetY();
+      }
+
+      // Rank column
+      $pdf->Cell(10, $rowHeight, (string)$rank, 1, 0, 'C', $fill);
+
+      // Question text with MultiCell for word wrap
+      $pdf->MultiCell($questionWidth, $rowHeight, $statement, 1, 'L', $fill, 0, $startX + 10, $startY, true, 0, false, true, $rowHeight, 'M');
+
+      // Centered columns
+      $pdf->SetXY($startX + 10 + $questionWidth, $startY);
+      $pdf->Cell(30, $rowHeight, $timesAnswered, 1, 0, 'C', $fill);
+      $pdf->Cell(30, $rowHeight, $successRate, 1, 1, 'C', $fill);
+
+      $fill = !$fill;
+    }
   }
 
   /**
