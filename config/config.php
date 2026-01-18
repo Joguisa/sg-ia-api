@@ -15,7 +15,7 @@ return [
     ],
   ],
   'cors' => [
-    'origins' => ['http://localhost:4200'],
+    'origins' => array_filter(array_map('trim', explode(',', $_ENV['CORS_ORIGIN'] ?? 'http://localhost:4200'))),
     'methods' => ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     'headers' => ['Content-Type', 'Authorization']
   ],
