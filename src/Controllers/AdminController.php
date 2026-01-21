@@ -868,7 +868,8 @@ final class AdminController {
   }
 
   /**
-   * Eliminar una pregunta
+   * Eliminar una pregunta (eliminación lógica - soft delete)
+   * Marca is_active = 0 en lugar de eliminar físicamente
    *
    * Endpoint: DELETE /admin/questions/{id}
    *
@@ -885,23 +886,16 @@ final class AdminController {
     }
 
     try {
-      $pdo = $this->questions->getPdo();
-      if (!$pdo) {
-        Response::json(['ok'=>false,'error'=>Translations::get('database_connection_failed', $lang)], 500);
-        return;
-      }
-
       // Verificar que la pregunta existe
-      $checkStmt = $pdo->prepare("SELECT id FROM questions WHERE id = ?");
-      $checkStmt->execute([$questionId]);
+      $question = $this->questions->find($questionId);
 
-      if (!$checkStmt->fetch()) {
+      if (!$question) {
         Response::json(['ok'=>false,'error'=>Translations::get('question_not_found', $lang)], 404);
         return;
       }
 
-      $stmt = $pdo->prepare("DELETE FROM questions WHERE id = ?");
-      $success = $stmt->execute([$questionId]);
+      // Eliminación lógica usando el repositorio
+      $success = $this->questions->delete($questionId);
 
       if ($success) {
         Response::json(['ok'=>true,'message'=>Translations::get('question_deleted', $lang)], 200);
@@ -1107,7 +1101,8 @@ final class AdminController {
   }
 
   /**
-   * Eliminación masiva de preguntas
+   * Eliminación masiva de preguntas (eliminación lógica - soft delete)
+   * Marca is_active = 0 en lugar de eliminar físicamente
    *
    * Endpoint: POST /admin/questions/delete-bulk
    * Body: { "delete_all_pending": true } O { "question_ids": [1, 2, 3...] } O { "batch_id": 5 }
@@ -1127,65 +1122,48 @@ final class AdminController {
       }
 
       $deletedCount = 0;
-      $questionIdsToDelete = [];
 
       // Opción 1: Eliminar todas las pendientes (no verificadas)
       if (isset($data['delete_all_pending']) && $data['delete_all_pending'] === true) {
-        $stmt = $pdo->prepare("SELECT id FROM questions WHERE admin_verified = 0");
+        // Eliminación lógica: marcar como inactivas
+        $stmt = $pdo->prepare("UPDATE questions SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE admin_verified = 0 AND is_active = 1");
         $stmt->execute();
-        $questionIdsToDelete = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+        $deletedCount = $stmt->rowCount();
       }
       // Opción 2: Eliminar IDs específicos
       elseif (isset($data['question_ids']) && is_array($data['question_ids']) && !empty($data['question_ids'])) {
         $questionIdsToDelete = array_map('intval', $data['question_ids']);
+        $placeholders = implode(',', array_fill(0, count($questionIdsToDelete), '?'));
+
+        // Eliminación lógica: marcar como inactivas
+        $stmt = $pdo->prepare("UPDATE questions SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN ($placeholders)");
+        $stmt->execute($questionIdsToDelete);
+        $deletedCount = $stmt->rowCount();
       }
       // Opción 3: Eliminar por batch_id
       elseif (isset($data['batch_id']) && is_numeric($data['batch_id'])) {
         $batchId = (int)$data['batch_id'];
-        $stmt = $pdo->prepare("SELECT id FROM questions WHERE batch_id = :batch_id");
+
+        // Eliminación lógica: marcar como inactivas
+        $stmt = $pdo->prepare("UPDATE questions SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE batch_id = :batch_id AND is_active = 1");
         $stmt->execute([':batch_id' => $batchId]);
-        $questionIdsToDelete = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+        $deletedCount = $stmt->rowCount();
+
+        // Actualizar estado del batch si es necesario
+        if ($this->batchRepo && $deletedCount > 0) {
+          // Verificar si todas las preguntas del batch están inactivas
+          $stmt = $pdo->prepare("SELECT COUNT(*) FROM questions WHERE batch_id = :batch_id AND is_active = 1");
+          $stmt->execute([':batch_id' => $batchId]);
+          $activeRemaining = (int)$stmt->fetchColumn();
+
+          if ($activeRemaining === 0) {
+            $this->batchRepo->updateStatus($batchId, 'archived');
+          }
+        }
       }
       else {
         Response::json(['ok' => false, 'error' => Translations::get('must_specify_deletion_method', $lang)], 400);
         return;
-      }
-
-      // Eliminar las preguntas
-      if (!empty($questionIdsToDelete)) {
-        $placeholders = implode(',', array_fill(0, count($questionIdsToDelete), '?'));
-
-        // 1. Eliminar player_answers que referencian las opciones de estas preguntas
-        $stmt = $pdo->prepare("DELETE FROM player_answers WHERE question_id IN ($placeholders)");
-        $stmt->execute($questionIdsToDelete);
-
-        // 2. Eliminar las opciones relacionadas
-        $stmt = $pdo->prepare("DELETE FROM question_options WHERE question_id IN ($placeholders)");
-        $stmt->execute($questionIdsToDelete);
-
-        // 3. Eliminar las explicaciones relacionadas
-        $stmt = $pdo->prepare("DELETE FROM question_explanations WHERE question_id IN ($placeholders)");
-        $stmt->execute($questionIdsToDelete);
-
-        // 4. Finalmente eliminar las preguntas
-        $stmt = $pdo->prepare("DELETE FROM questions WHERE id IN ($placeholders)");
-        $stmt->execute($questionIdsToDelete);
-        $deletedCount = $stmt->rowCount();
-
-        // Si se eliminó por batch, actualizar contadores del batch
-        if (isset($data['batch_id']) && $this->batchRepo) {
-          $batchId = (int)$data['batch_id'];
-          // Verificar si el batch quedó vacío
-          $stmt = $pdo->prepare("SELECT COUNT(*) FROM questions WHERE batch_id = :batch_id");
-          $stmt->execute([':batch_id' => $batchId]);
-          $remaining = (int)$stmt->fetchColumn();
-
-          if ($remaining === 0) {
-            // Eliminar el batch si no tiene preguntas
-            $stmt = $pdo->prepare("DELETE FROM question_batches WHERE id = :batch_id");
-            $stmt->execute([':batch_id' => $batchId]);
-          }
-        }
       }
 
       // Registrar en logs
@@ -1193,7 +1171,7 @@ final class AdminController {
                  VALUES (:action, :entity_table, :entity_id, :details, NOW())";
       $logSt = $pdo->prepare($logSQL);
       $logSt->execute([
-        ':action' => 'bulk_delete',
+        ':action' => 'bulk_soft_delete',
         ':entity_table' => 'questions',
         ':entity_id' => 0,
         ':details' => json_encode([
@@ -1585,6 +1563,88 @@ final class AdminController {
       error_log("Error getting available providers: " . $e->getMessage());
       Response::json(['ok' => false, 'error' => 'Error al obtener proveedores: ' . $e->getMessage()], 500);
     }
+  }
+
+  /**
+   * Descarga una plantilla CSV vacía para importar preguntas
+   *
+   * Endpoint: GET /admin/csv-template
+   *
+   * @return void
+   */
+  public function downloadCsvTemplate(): void
+  {
+    // Headers del CSV
+    $headers = [
+      'category_id',
+      'difficulty',
+      'statement',
+      'option_1',
+      'option_2',
+      'option_3',
+      'option_4',
+      'correct_option_index',
+      'explanation_correct',
+      'explanation_incorrect',
+      'source_citation',
+      'language'
+    ];
+
+    // Filas de ejemplo
+    $exampleRows = [
+      [
+        '1',
+        '2',
+        '¿Cuál es la capital de Francia?',
+        'Madrid',
+        'París',
+        'Londres',
+        'Berlín',
+        '1',
+        'Correcto. París es la capital de Francia desde hace siglos.',
+        'Incorrecto. Recuerda que París es la capital de Francia.',
+        'Geografía General',
+        'es'
+      ],
+      [
+        '1',
+        '3',
+        'What is the largest planet in our solar system?',
+        'Earth',
+        'Mars',
+        'Jupiter',
+        'Saturn',
+        '2',
+        'Correct. Jupiter is the largest planet in our solar system.',
+        'Incorrect. Jupiter is the largest planet, not this one.',
+        'Basic Astronomy',
+        'en'
+      ]
+    ];
+
+    // Configurar headers HTTP para descarga de archivo
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="plantilla_preguntas.csv"');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    // Crear el output stream
+    $output = fopen('php://output', 'w');
+
+    // Agregar BOM para UTF-8 (ayuda a Excel a reconocer la codificación)
+    fprintf($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+    // Escribir headers
+    fputcsv($output, $headers);
+
+    // Escribir filas de ejemplo
+    foreach ($exampleRows as $row) {
+      fputcsv($output, $row);
+    }
+
+    fclose($output);
+    exit;
   }
 
   /**

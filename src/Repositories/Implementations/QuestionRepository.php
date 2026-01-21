@@ -562,16 +562,56 @@ final class QuestionRepository implements QuestionRepositoryInterface
   }
 
   /**
-   * Elimina una pregunta y todos sus registros relacionados
+   * Elimina lógicamente una pregunta (soft delete)
+   * Marca is_active = 0 en lugar de eliminar físicamente los datos
+   * Esto preserva el historial de respuestas (player_answers) y los datos relacionados
    *
    * @param int $id ID de la pregunta
-   * @return bool true si la eliminación fue exitosa
+   * @return bool true si la eliminación lógica fue exitosa
    */
   public function delete(int $id): bool
   {
     try {
+      // Eliminación lógica: marcar como inactiva
+      // Los datos históricos (player_answers, opciones, explicaciones) se conservan
+      $sql = "UPDATE questions SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = :id";
+      $st = $this->db->pdo()->prepare($sql);
+      return $st->execute([':id' => $id]);
+    } catch (\Exception $e) {
+      error_log("Error in logical delete of question $id: " . $e->getMessage());
+      return false;
+    }
+  }
+
+  /**
+   * Restaura una pregunta eliminada lógicamente (reactivar)
+   *
+   * @param int $id ID de la pregunta
+   * @return bool true si la restauración fue exitosa
+   */
+  public function restore(int $id): bool
+  {
+    try {
+      $sql = "UPDATE questions SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = :id";
+      $st = $this->db->pdo()->prepare($sql);
+      return $st->execute([':id' => $id]);
+    } catch (\Exception $e) {
+      error_log("Error restoring question $id: " . $e->getMessage());
+      return false;
+    }
+  }
+
+  /**
+   * Elimina físicamente una pregunta y todos sus registros relacionados
+   * PRECAUCIÓN: Esta operación es irreversible y elimina datos históricos
+   *
+   * @param int $id ID de la pregunta
+   * @return bool true si la eliminación física fue exitosa
+   */
+  public function hardDelete(int $id): bool
+  {
+    try {
       // 0. Eliminar respuestas de jugadores relacionadas (player_answers)
-      // Esto es necesario porque las respuestas hacen referencia a las opciones
       $sqlAnswers = "DELETE FROM player_answers WHERE question_id = :id";
       $stAnswers = $this->db->pdo()->prepare($sqlAnswers);
       $stAnswers->execute([':id' => $id]);
@@ -586,11 +626,12 @@ final class QuestionRepository implements QuestionRepositoryInterface
       $stExplanations = $this->db->pdo()->prepare($sqlExplanations);
       $stExplanations->execute([':id' => $id]);
 
-      // 3. Eliminar la pregunta
+      // 3. Eliminar la pregunta físicamente
       $sql = "DELETE FROM questions WHERE id = :id";
       $st = $this->db->pdo()->prepare($sql);
       return $st->execute([':id' => $id]);
     } catch (\Exception $e) {
+      error_log("Error in hard delete of question $id: " . $e->getMessage());
       return false;
     }
   }

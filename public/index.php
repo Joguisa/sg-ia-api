@@ -130,8 +130,11 @@ $router->add('DELETE','/admin/questions/{id}', fn($p)=> $questionCtrl->delete($p
 
 // Stats (Public)
 $router->add('GET','/stats/session/{id}', fn($p)=> $statsCtrl->session($p));
-
+$router->add('GET','/stats/session/{id}/answers', fn($p)=> $statsCtrl->sessionAnswers($p));
+$router->add('GET','/stats/session/{id}/streaks', fn($p)=> $statsCtrl->sessionStreaks($p));
 $router->add('GET','/stats/player/{id}', fn($p)=> $statsCtrl->playerStats($p));
+$router->add('GET','/stats/player/{id}/sessions', fn($p)=> $statsCtrl->playerSessions($p));
+$router->add('GET','/stats/player/{id}/streaks', fn($p)=> $statsCtrl->playerStreaks($p));
 $router->add('GET','/stats/leaderboard', fn()=> $statsCtrl->leaderboard());
 
 // Question Management
@@ -162,6 +165,7 @@ $router->add('POST','/admin/questions/verify-bulk', fn()=> $adminCtrl->verifyBul
 $router->add('POST','/admin/questions/unverify-bulk', fn()=> $adminCtrl->unverifyBulk(), fn()=> $authMiddleware->validate());
 $router->add('POST','/admin/questions/delete-bulk', fn()=> $adminCtrl->deleteBulk(), fn()=> $authMiddleware->validate());
 $router->add('POST','/admin/batch/import-csv', fn()=> $adminCtrl->importCSV(), fn()=> $authMiddleware->validate());
+$router->add('GET','/admin/csv-template', fn()=> $adminCtrl->downloadCsvTemplate(), fn()=> $authMiddleware->validate());
 $router->add('GET','/admin/unverified', fn()=> $adminCtrl->getUnverifiedQuestions(), fn()=> $authMiddleware->validate());
 $router->add('PUT','/admin/explanation/{explanationId}', fn($p)=> $adminCtrl->editExplanation($p), fn()=> $authMiddleware->validate());
 $router->add('GET','/admin/batch-statistics', fn()=> $adminCtrl->getBatchStatistics(), fn()=> $authMiddleware->validate());
