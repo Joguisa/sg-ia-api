@@ -18,6 +18,7 @@ interface QuestionRepositoryInterface
   public function getOptionsByQuestionId(int $questionId): array;
   public function getPdo(): ?\PDO;
   public function findAll(): array;
+  public function findAllWithInactive(?string $statusFilter = null): array;
   public function updateVerification(int $id, bool $isVerified): bool;
   public function delete(int $id): bool;
   public function getFullQuestion(int $questionId): ?array;

@@ -545,6 +545,31 @@ final class QuestionRepository implements QuestionRepositoryInterface
   }
 
   /**
+   * Obtiene todas las preguntas con filtro de estado activo/inactivo
+   *
+   * @param string|null $statusFilter 'active', 'inactive', o null para todas
+   * @return array Array de preguntas
+   */
+  public function findAllWithInactive(?string $statusFilter = null): array
+  {
+    $whereClause = match($statusFilter) {
+      'active' => "WHERE q.is_active = 1",
+      'inactive' => "WHERE q.is_active = 0",
+      default => ""
+    };
+
+    $sql = "SELECT q.id, q.statement, q.difficulty, q.category_id, qc.name AS category_name,
+                   q.is_ai_generated, q.admin_verified, q.is_active
+            FROM questions q
+            LEFT JOIN question_categories qc ON qc.id = q.category_id
+            $whereClause
+            ORDER BY q.id DESC";
+    $st = $this->db->pdo()->prepare($sql);
+    $st->execute();
+    return $st->fetchAll() ?: [];
+  }
+
+  /**
    * Actualiza el estado de verificación de una pregunta
    *
    * @param int $id ID de la pregunta

@@ -237,7 +237,7 @@ final class StatisticsController {
                 pa.id AS answer_id,
                 pa.answered_at,
                 pa.is_correct,
-                pa.time_to_answer,
+                pa.time_taken_seconds,
                 q.id AS question_id,
                 q.statement AS question_statement,
                 q.difficulty AS question_difficulty,
@@ -333,7 +333,7 @@ final class StatisticsController {
           'answer_id' => (int)$a['answer_id'],
           'answered_at' => $a['answered_at'],
           'is_correct' => (bool)$a['is_correct'],
-          'time_to_answer' => $a['time_to_answer'] ? (float)$a['time_to_answer'] : null,
+          'time_to_answer' => $a['time_taken_seconds'] ? (float)$a['time_taken_seconds'] : null,
           'question' => [
             'id' => $qId,
             'statement' => $a['question_statement'],

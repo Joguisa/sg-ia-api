@@ -18,16 +18,18 @@ final class QuestionController {
   }
 
   /**
-   * Listar todas las preguntas activas
+   * Listar preguntas con filtros
    *
-   * Endpoint: GET /questions
+   * Endpoint: GET /questions?status={active|inactive|all}
    *
    * @return void
    */
   public function list(): void {
     $lang = LanguageDetector::detect();
+    $status = $_GET['status'] ?? 'active';
+    
     try {
-      $questions = $this->questions->findAll();
+      $questions = $this->questions->findAllWithInactive($status);
       Response::json(['ok' => true, 'questions' => $questions], 200);
     } catch (\Exception $e) {
       Response::json(['ok' => false, 'error' => Translations::get('failed_to_fetch_questions', $lang) . ': ' . $e->getMessage()], 500);

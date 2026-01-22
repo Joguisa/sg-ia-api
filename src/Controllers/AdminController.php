@@ -801,31 +801,26 @@ final class AdminController {
   }
 
   /**
-   * Obtener todas las preguntas activas con información de categoría
+   * Obtener preguntas con filtro de estado activo/inactivo
    *
-   * Endpoint: GET /admin/questions
+   * Endpoint: GET /admin/questions?status=active|inactive|all
    *
    * @return void
    */
   public function getQuestions(): void {
     $lang = LanguageDetector::detect();
     try {
-      $pdo = $this->questions->getPdo();
-      if (!$pdo) {
-        Response::json(['ok'=>false,'error'=>Translations::get('database_connection_failed', $lang)], 500);
-        return;
+      // Obtener parámetro de filtro de estado
+      $statusFilter = $_GET['status'] ?? 'active';
+
+      // Validar el filtro
+      if (!in_array($statusFilter, ['active', 'inactive', 'all'])) {
+        $statusFilter = 'active';
       }
 
-      $sql = "SELECT q.id, q.statement, q.difficulty, q.category_id, qc.name AS category_name,
-                     q.is_ai_generated, q.admin_verified
-              FROM questions q
-              LEFT JOIN question_categories qc ON qc.id = q.category_id
-              WHERE q.is_active = 1
-              ORDER BY q.id DESC";
-
-      $stmt = $pdo->prepare($sql);
-      $stmt->execute();
-      $questions = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+      // Usar el nuevo método del repositorio
+      $filterValue = $statusFilter === 'all' ? null : $statusFilter;
+      $questions = $this->questions->findAllWithInactive($filterValue);
 
       Response::json([
         'ok' => true,
@@ -833,6 +828,60 @@ final class AdminController {
       ], 200);
     } catch (\Exception $e) {
       Response::json(['ok'=>false,'error'=>'Failed to fetch questions: ' . $e->getMessage()], 500);
+    }
+  }
+
+  /**
+   * Restaurar una pregunta eliminada lógicamente
+   *
+   * Endpoint: PATCH /admin/questions/{id}/restore
+   *
+   * @param array $params Parámetros de la ruta (contiene 'id')
+   * @return void
+   */
+  public function restoreQuestion(array $params): void {
+    $lang = LanguageDetector::detect();
+    $questionId = (int)($params['id'] ?? 0);
+
+    if ($questionId <= 0) {
+      Response::json(['ok'=>false,'error'=>Translations::get('invalid_question_id', $lang)], 400);
+      return;
+    }
+
+    try {
+      // Verificar que la pregunta existe
+      $pdo = $this->questions->getPdo();
+      if (!$pdo) {
+        Response::json(['ok'=>false,'error'=>Translations::get('database_connection_failed', $lang)], 500);
+        return;
+      }
+
+      // Verificar que la pregunta existe y está inactiva
+      $checkSql = "SELECT id, is_active FROM questions WHERE id = :id";
+      $checkStmt = $pdo->prepare($checkSql);
+      $checkStmt->execute([':id' => $questionId]);
+      $question = $checkStmt->fetch(\PDO::FETCH_ASSOC);
+
+      if (!$question) {
+        Response::json(['ok'=>false,'error'=>Translations::get('question_not_found', $lang)], 404);
+        return;
+      }
+
+      if ($question['is_active'] == 1) {
+        Response::json(['ok'=>false,'error'=>Translations::get('question_already_active', $lang)], 400);
+        return;
+      }
+
+      // Restaurar la pregunta usando el repositorio
+      $success = $this->questions->restore($questionId);
+
+      if ($success) {
+        Response::json(['ok'=>true,'message'=>Translations::get('question_restored', $lang)], 200);
+      } else {
+        Response::json(['ok'=>false,'error'=>Translations::get('failed_to_restore_question', $lang)], 500);
+      }
+    } catch (\Exception $e) {
+      Response::json(['ok'=>false,'error'=>Translations::get('error_restoring_question', $lang) . ': ' . $e->getMessage()], 500);
     }
   }
 
@@ -1590,38 +1639,6 @@ final class AdminController {
       'language'
     ];
 
-    // Filas de ejemplo
-    $exampleRows = [
-      [
-        '1',
-        '2',
-        '¿Cuál es la capital de Francia?',
-        'Madrid',
-        'París',
-        'Londres',
-        'Berlín',
-        '1',
-        'Correcto. París es la capital de Francia desde hace siglos.',
-        'Incorrecto. Recuerda que París es la capital de Francia.',
-        'Geografía General',
-        'es'
-      ],
-      [
-        '1',
-        '3',
-        'What is the largest planet in our solar system?',
-        'Earth',
-        'Mars',
-        'Jupiter',
-        'Saturn',
-        '2',
-        'Correct. Jupiter is the largest planet in our solar system.',
-        'Incorrect. Jupiter is the largest planet, not this one.',
-        'Basic Astronomy',
-        'en'
-      ]
-    ];
-
     // Configurar headers HTTP para descarga de archivo
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="plantilla_preguntas.csv"');
@@ -1636,12 +1653,7 @@ final class AdminController {
     fprintf($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
     // Escribir headers
-    fputcsv($output, $headers);
-
-    // Escribir filas de ejemplo
-    foreach ($exampleRows as $row) {
-      fputcsv($output, $row);
-    }
+    fputcsv($output, $headers, ",", "\"", "\\");
 
     fclose($output);
     exit;

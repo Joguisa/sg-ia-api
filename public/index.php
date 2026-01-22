@@ -142,6 +142,7 @@ $router->add('PUT','/admin/questions/{id}', fn($p)=> $adminCtrl->updateQuestion(
 $router->add('GET','/admin/questions/{id}/full', fn($p)=> $adminCtrl->getQuestionFull($p), fn()=> $authMiddleware->validate());
 $router->add('PUT','/admin/questions/{id}/full', fn($p)=> $adminCtrl->updateQuestionFull($p), fn()=> $authMiddleware->validate());
 $router->add('PATCH','/admin/questions/{id}/verify', fn($p)=> $adminCtrl->verifyQuestion($p), fn()=> $authMiddleware->validate());
+$router->add('PATCH','/admin/questions/{id}/restore', fn($p)=> $adminCtrl->restoreQuestion($p), fn()=> $authMiddleware->validate());
 
 // Prompt Configuration
 $router->add('GET','/admin/config/prompt', fn()=> $adminCtrl->getPromptConfig(), fn()=> $authMiddleware->validate());
