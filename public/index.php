@@ -9,9 +9,9 @@ use Src\Middleware\AuthMiddleware;
 use Src\Middleware\SuperAdminMiddleware;
 use Dotenv\Dotenv;
 
-use Src\Repositories\Implementations\{PlayerRepository, QuestionRepository, SessionRepository, AnswerRepository, SystemPromptRepository, CategoryRepository, ErrorLogRepository, QuestionBatchRepository, RoomRepository, AdminRepository};
-use Src\Controllers\{PlayerController, GameController, QuestionController, StatisticsController, AdminController, AuthController, CategoryController, LogController, RoomController};
-use Src\Services\{GameService, AIEngine, AuthService, RoomService, ExportService};
+use Src\Repositories\Implementations\{PlayerRepository, QuestionRepository, SessionRepository, AnswerRepository, SystemPromptRepository, CategoryRepository, ErrorLogRepository, QuestionBatchRepository, RoomRepository, AdminRepository, UserPreferenceRepository};
+use Src\Controllers\{PlayerController, GameController, QuestionController, StatisticsController, AdminController, AuthController, CategoryController, LogController, RoomController, PreferenceController};
+use Src\Services\{GameService, AIEngine, AuthService, RoomService, ExportService, PreferenceService};
 use Src\Services\AI\GeminiAIService;
 use Src\Services\AI\GroqAIService;
 use Src\Services\AI\DeepSeekAIService;
@@ -208,6 +208,15 @@ $router->add('POST', '/admin/admins', fn() => $adminCtrl->storeAdmin(), fn() => 
 $router->add('PUT', '/admin/admins/{id}', fn($p) => $adminCtrl->updateAdmin($p), fn() => $superAdminMiddleware->validate());
 $router->add('DELETE', '/admin/admins/{id}', fn($p) => $adminCtrl->destroyAdmin($p), fn() => $superAdminMiddleware->validate());
 $router->add('PATCH', '/admin/admins/{id}/status', fn($p) => $adminCtrl->toggleAdminStatus($p), fn() => $superAdminMiddleware->validate());
+
+// User Preferences (Req 1)
+$preferenceRepo = new UserPreferenceRepository($conn);
+$preferenceService = new PreferenceService($preferenceRepo);
+$preferenceCtrl = new PreferenceController($preferenceService);
+
+$router->add('GET', '/preferences/{userType}/{userId}', fn($p) => $preferenceCtrl->getLanguage($p));
+$router->add('PUT', '/preferences/{userType}/{userId}/language', fn($p) => $preferenceCtrl->setLanguage($p));
+$router->add('DELETE', '/preferences/{userType}/{userId}/language', fn($p) => $preferenceCtrl->resetLanguage($p));
 
 
 // Dispatch

@@ -200,6 +200,8 @@ class Translations
       'category_questions_completed' => '¡Felicitaciones! Completaste todas las preguntas disponibles de esta categoría',
       'session_abandoned' => 'Sesión abandonada',
       'game_abandoned_successfully' => 'Juego abandonado exitosamente',
+      'language_updated' => 'Idioma de interfaz actualizado',
+      'language_reset' => 'Idioma restaurado al predeterminado',
 
       // ========== ADMINS ==========
       'invalid_admin_id' => 'ID de administrador inválido',
@@ -435,6 +437,8 @@ class Translations
       'category_questions_completed' => 'Congratulations! You completed all available questions in this category',
       'session_abandoned' => 'Session abandoned',
       'game_abandoned_successfully' => 'Game abandoned successfully',
+      'language_updated' => 'Interface language updated',
+      'language_reset' => 'Language restored to default',
 
       // ========== ADMINS ==========
       'invalid_admin_id' => 'Invalid admin ID',
