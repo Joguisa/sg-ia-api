@@ -202,6 +202,11 @@ class Translations
       'game_abandoned_successfully' => 'Juego abandonado exitosamente',
       'language_updated' => 'Idioma de interfaz actualizado',
       'language_reset' => 'Idioma restaurado al predeterminado',
+      'password_reset_code_sent' => 'Si el email existe, se envió el código',
+      'invalid_reset_code' => 'Código de verificación inválido',
+      'reset_code_expired' => 'Código de verificación expirado',
+      'password_reset_successful' => 'Contraseña actualizada exitosamente',
+      'password_too_short' => 'La contraseña debe tener al menos 8 caracteres',
 
       // ========== ADMINS ==========
       'invalid_admin_id' => 'ID de administrador inválido',
@@ -439,6 +444,11 @@ class Translations
       'game_abandoned_successfully' => 'Game abandoned successfully',
       'language_updated' => 'Interface language updated',
       'language_reset' => 'Language restored to default',
+      'password_reset_code_sent' => 'If the email exists, the code has been sent',
+      'invalid_reset_code' => 'Invalid verification code',
+      'reset_code_expired' => 'Verification code expired',
+      'password_reset_successful' => 'Password updated successfully',
+      'password_too_short' => 'Password must be at least 8 characters',
 
       // ========== ADMINS ==========
       'invalid_admin_id' => 'Invalid admin ID',

@@ -9,9 +9,9 @@ use Src\Middleware\AuthMiddleware;
 use Src\Middleware\SuperAdminMiddleware;
 use Dotenv\Dotenv;
 
-use Src\Repositories\Implementations\{PlayerRepository, QuestionRepository, SessionRepository, AnswerRepository, SystemPromptRepository, CategoryRepository, ErrorLogRepository, QuestionBatchRepository, RoomRepository, AdminRepository, UserPreferenceRepository};
-use Src\Controllers\{PlayerController, GameController, QuestionController, StatisticsController, AdminController, AuthController, CategoryController, LogController, RoomController, PreferenceController};
-use Src\Services\{GameService, AIEngine, AuthService, RoomService, ExportService, PreferenceService};
+use Src\Repositories\Implementations\{PlayerRepository, QuestionRepository, SessionRepository, AnswerRepository, SystemPromptRepository, CategoryRepository, ErrorLogRepository, QuestionBatchRepository, RoomRepository, AdminRepository, UserPreferenceRepository, PasswordResetRepository};
+use Src\Controllers\{PlayerController, GameController, QuestionController, StatisticsController, AdminController, AuthController, CategoryController, LogController, RoomController, PreferenceController, PasswordResetController};
+use Src\Services\{GameService, AIEngine, AuthService, RoomService, ExportService, PreferenceService, PasswordResetService, EmailService};
 use Src\Services\AI\GeminiAIService;
 use Src\Services\AI\GroqAIService;
 use Src\Services\AI\DeepSeekAIService;
@@ -111,6 +111,16 @@ $router->add('GET', '/', fn() => \Src\Utils\Response::json([
 
 // Auth (Public)
 $router->add('POST', '/auth/login', fn() => $authCtrl->login());
+
+// Password Reset (Req 3 - Public)
+$passwordResetRepo = new PasswordResetRepository($conn);
+$emailService = new EmailService();
+$passwordResetService = new PasswordResetService($adminRepo, $passwordResetRepo, $emailService);
+$passwordResetCtrl = new PasswordResetController($passwordResetService);
+
+$router->add('POST', '/password-reset/request', fn() => $passwordResetCtrl->requestReset());
+$router->add('POST', '/password-reset/verify', fn() => $passwordResetCtrl->verifyCode());
+$router->add('POST', '/password-reset/reset', fn() => $passwordResetCtrl->resetPassword());
 
 // Logging (Public - sin autenticación)
 $router->add('POST', '/logs/error', fn() => $logCtrl->logError());
