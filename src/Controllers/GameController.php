@@ -14,7 +14,8 @@ final class GameController
   public function __construct(
     private GameService $game,
     private SessionRepositoryInterface $sessions
-  ) {}
+  ) {
+  }
 
   /**
    * Inicia una nueva sesión de juego.
@@ -32,8 +33,8 @@ final class GameController
       $data = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR) ?? [];
       ValidationService::requireFields($data, ['player_id']);
 
-      $playerId = (int)$data['player_id'];
-      $startDiff = isset($data['start_difficulty']) ? (float)$data['start_difficulty'] : 1.0;
+      $playerId = (int) $data['player_id'];
+      $startDiff = isset($data['start_difficulty']) ? (float) $data['start_difficulty'] : 1.0;
       $roomCode = isset($data['room_code']) && !empty($data['room_code']) ? trim($data['room_code']) : null;
 
       if ($playerId <= 0) {
@@ -59,13 +60,13 @@ final class GameController
     try {
       // category_id es opcional: si es 0 o no existe, buscar en TODAS las categorías
       $categoryIdParam = $_GET['category_id'] ?? 0;
-      $categoryId = $categoryIdParam > 0 ? (int)$categoryIdParam : null;
+      $categoryId = $categoryIdParam > 0 ? (int) $categoryIdParam : null;
 
-      $difficultyFloat = (float)($_GET['difficulty'] ?? 1.0);
-      $sessionId = (int)($_GET['session_id'] ?? 0);
+      $difficultyFloat = (float) ($_GET['difficulty'] ?? 1.0);
+      $sessionId = (int) ($_GET['session_id'] ?? 0);
 
       // Redondear dificultad al entero más cercano para buscar preguntas
-      $difficulty = (int)round($difficultyFloat);
+      $difficulty = (int) round($difficultyFloat);
 
       if ($difficulty < 1 || $difficulty > 5) {
         throw new \InvalidArgumentException(Translations::get('invalid_parameters', $lang));
@@ -130,16 +131,16 @@ final class GameController
       $data = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR) ?? [];
       ValidationService::requireFields($data, ['question_id', 'time_taken']);
 
-      $sessionId = (int)$params['id'];
+      $sessionId = (int) $params['id'];
       if ($sessionId <= 0) {
         throw new \InvalidArgumentException(Translations::get('invalid_session_id', $lang));
       }
 
       $out = $this->game->submitAnswer(
         $sessionId,
-        (int)$data['question_id'],
-        isset($data['selected_option_id']) ? (int)$data['selected_option_id'] : null,
-        (float)$data['time_taken']
+        (int) $data['question_id'],
+        isset($data['selected_option_id']) ? (int) $data['selected_option_id'] : null,
+        (float) $data['time_taken']
       );
       Response::json(['ok' => true] + $out);
     } catch (\JsonException $e) {
@@ -150,6 +151,30 @@ final class GameController
       Response::json(['ok' => false, 'error' => $e->getMessage()], 400);
     } catch (\RuntimeException $e) {
       Response::json(['ok' => false, 'error' => $e->getMessage()], 400);
+    }
+  }
+
+  public function abandon(array $params): void
+  {
+    $lang = LanguageDetector::detect();
+    try {
+      $sessionId = (int) $params['id'];
+      if ($sessionId <= 0) {
+        throw new \InvalidArgumentException(Translations::get('invalid_session_id', $lang));
+      }
+
+      $out = $this->game->abandonSession($sessionId);
+
+      Response::json([
+        'ok' => true,
+        'message' => Translations::get('game_abandoned_successfully', $lang)
+      ] + $out);
+    } catch (\InvalidArgumentException $e) {
+      Response::json(['ok' => false, 'error' => $e->getMessage()], 400);
+    } catch (\RuntimeException $e) {
+      // 409 Conflict si la sesión ya finalizó, o 404 si no existe
+      $code = $e->getMessage() === 'Session not found' ? 404 : 409;
+      Response::json(['ok' => false, 'error' => $e->getMessage()], $code);
     }
   }
 }

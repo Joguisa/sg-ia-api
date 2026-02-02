@@ -19,7 +19,8 @@ final class GameService
     private ?GenerativeAIInterface $generativeAi = null,
     private ?QuestionBatchRepositoryInterface $batchRepo = null,
     private ?RoomRepositoryInterface $roomRepo = null
-  ) {}
+  ) {
+  }
 
   /**
    * Cuenta preguntas respondidas por nivel de dificultad en una sesión
@@ -45,7 +46,7 @@ final class GameService
 
     $counts = [];
     foreach ($results as $row) {
-      $counts[(int)$row['level']] = (int)$row['count'];
+      $counts[(int) $row['level']] = (int) $row['count'];
     }
 
     return $counts;
@@ -62,7 +63,7 @@ final class GameService
   private function getLockedLevels(int $sessionId, int $maxQuestions): array
   {
     $questionsPerLevel = $this->getQuestionsPerLevel($sessionId);
-    $questionsPerLevelLimit = (int)floor($maxQuestions / 5);
+    $questionsPerLevelLimit = (int) floor($maxQuestions / 5);
 
     error_log("Questions per level: " . json_encode($questionsPerLevel));
     error_log("Questions per level limit: $questionsPerLevelLimit");
@@ -95,7 +96,7 @@ final class GameService
     $st->execute([':session_id' => $sessionId]);
     $result = $st->fetch();
 
-    return $result ? (int)$result['total'] : 0;
+    return $result ? (int) $result['total'] : 0;
   }
 
   /**
@@ -116,7 +117,7 @@ final class GameService
     $st->execute();
     $result = $st->fetch();
 
-    return $result ? (int)$result['max_questions_per_game'] : 15;
+    return $result ? (int) $result['max_questions_per_game'] : 15;
   }
 
   /**
@@ -144,7 +145,8 @@ final class GameService
     }
 
     $player = $this->players->find($playerId);
-    if (!$player) throw new \RuntimeException('Jugador no existe');
+    if (!$player)
+      throw new \RuntimeException('Jugador no existe');
 
     $roomId = null;
     $roomData = null;
@@ -294,9 +296,9 @@ final class GameService
         'difficulty' => $q->difficulty,
         'category_id' => $q->categoryId,
         'options' => array_map(fn($opt) => [
-          'id' => (int)$opt['id'],
+          'id' => (int) $opt['id'],
           'text' => $opt['text'],
-          'is_correct' => (bool)$opt['is_correct']
+          'is_correct' => (bool) $opt['is_correct']
         ], $options),
         // NUEVO: Metadata de progreso para el frontend
         'progress' => [
@@ -381,9 +383,9 @@ final class GameService
         'is_ai_generated' => true,
         'admin_verified' => false,
         'options' => array_map(fn($opt) => [
-          'id' => (int)$opt['id'],
+          'id' => (int) $opt['id'],
           'text' => $opt['text'],
-          'is_correct' => (bool)$opt['is_correct']
+          'is_correct' => (bool) $opt['is_correct']
         ], $savedOptions)
       ];
     } catch (\Throwable $e) {
@@ -438,7 +440,8 @@ final class GameService
   ): array {
     // Obtener sesión y dificultad ACTUAL de BD
     $session = $this->sessions->get($sessionId);
-    if (!$session) throw new \RuntimeException('Sesión no existe');
+    if (!$session)
+      throw new \RuntimeException('Sesión no existe');
 
     $currentDiff = $session->currentDifficulty;
 
@@ -488,6 +491,28 @@ final class GameService
       'next_difficulty' => $nextDiff,
       'explanation' => $explanation,
       'correct_option_id' => $correctOptionId
+    ];
+  }
+
+  public function abandonSession(int $sessionId): array
+  {
+    $session = $this->sessions->get($sessionId);
+    if (!$session) {
+      throw new \RuntimeException('Session not found');
+    }
+    if ($session->status !== 'active') {
+      throw new \RuntimeException('Session is already finished');
+    }
+
+    $this->sessions->abandon($sessionId);
+    $totalAnswered = $this->getTotalQuestionsAnswered($sessionId);
+
+    return [
+      'status' => 'abandoned',
+      'final_score' => $session->score,
+      'lives_remaining' => $session->lives,
+      'total_questions_answered' => $totalAnswered,
+      'ended_at' => date('c')
     ];
   }
 }

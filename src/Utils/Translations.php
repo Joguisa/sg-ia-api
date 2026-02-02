@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 namespace Src\Utils;
 
-class Translations {
+class Translations
+{
   private static array $strings = [
     'es' => [
       // ========== REPORT TRANSLATIONS (EXISTING) ==========
@@ -197,6 +198,8 @@ class Translations {
       'quiz_completed' => '¡Felicitaciones! Completaste el cuestionario',
       'all_questions_completed' => '¡Felicitaciones! Completaste todas las preguntas disponibles',
       'category_questions_completed' => '¡Felicitaciones! Completaste todas las preguntas disponibles de esta categoría',
+      'session_abandoned' => 'Sesión abandonada',
+      'game_abandoned_successfully' => 'Juego abandonado exitosamente',
 
       // ========== ADMINS ==========
       'invalid_admin_id' => 'ID de administrador inválido',
@@ -212,7 +215,7 @@ class Translations {
       'invalid_email_format' => 'Formato de email inválido',
       'invalid_role' => 'Rol inválido',
       'permission_denied' => 'Permiso denegado',
-      
+
       // ========== SYSTEM / PROMPTS ==========
       'prompt_repo_unavailable' => 'Repositorio de prompts no disponible',
       'no_active_prompt' => 'No se encontró prompt activo',
@@ -224,7 +227,7 @@ class Translations {
       'failed_to_update_prompt' => 'Error al actualizar prompt',
       'admin_status_updated' => 'Estado del administrador actualizado exitosamente',
       'failed_to_update_admin_status' => 'Error al actualizar estado del administrador',
-      
+
       // ========== BATCH GENERATION ==========
       'game_service_unavailable' => 'Servicio de juego no disponible',
       'batch_repo_unavailable' => 'Repositorio de lotes no disponible',
@@ -233,7 +236,7 @@ class Translations {
       'batch_generation_failed' => 'Falló la generación del lote',
       'no_questions_generated' => 'No se pudo generar ninguna pregunta. Verifique la configuración del proveedor de IA y los créditos.',
       'questions_generated' => 'preguntas generadas exitosamente en el lote',
-      
+
       // ========== DATABASE ==========
       'database_connection_failed' => 'Falló la conexión a la base de datos',
       'failed_to_fetch_dashboard_stats' => 'Error al obtener estadísticas del dashboard',
@@ -430,6 +433,8 @@ class Translations {
       'quiz_completed' => 'Congratulations! You completed the quiz',
       'all_questions_completed' => 'Congratulations! You completed all available questions',
       'category_questions_completed' => 'Congratulations! You completed all available questions in this category',
+      'session_abandoned' => 'Session abandoned',
+      'game_abandoned_successfully' => 'Game abandoned successfully',
 
       // ========== ADMINS ==========
       'invalid_admin_id' => 'Invalid admin ID',
@@ -445,7 +450,7 @@ class Translations {
       'invalid_email_format' => 'Invalid email format',
       'invalid_role' => 'Invalid role',
       'permission_denied' => 'Permission denied',
-      
+
       // ========== SYSTEM / PROMPTS ==========
       'prompt_repo_unavailable' => 'Prompt repository not available',
       'no_active_prompt' => 'No active prompt found',
@@ -457,7 +462,7 @@ class Translations {
       'failed_to_update_prompt' => 'Failed to update prompt',
       'admin_status_updated' => 'Admin status updated successfully',
       'failed_to_update_admin_status' => 'Failed to update admin status',
-      
+
       // ========== BATCH GENERATION ==========
       'game_service_unavailable' => 'Game service not available',
       'batch_repo_unavailable' => 'Batch repository not available',
@@ -466,14 +471,15 @@ class Translations {
       'batch_generation_failed' => 'Batch generation failed',
       'no_questions_generated' => 'Failed to generate any questions. Check AI provider configuration and credits.',
       'questions_generated' => 'questions generated successfully in batch',
-      
+
       // ========== DATABASE ==========
       'database_connection_failed' => 'Database connection failed',
       'failed_to_fetch_dashboard_stats' => 'Failed to fetch dashboard stats',
     ]
   ];
 
-  public static function get(string $key, string $lang = 'es'): string {
+  public static function get(string $key, string $lang = 'es'): string
+  {
     return self::$strings[$lang][$key] ?? self::$strings['es'][$key] ?? $key;
   }
 }
