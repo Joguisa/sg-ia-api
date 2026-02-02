@@ -1,0 +1,10 @@
+RewriteEngine On
+RewriteBase /SGcolon/
+
+# Pasar header Authorization a PHP (Apache CGI/FastCGI)
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+# Redirigir todo a public/index.php (incluyendo OPTIONS para CORS)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/index.php [QSA,L]

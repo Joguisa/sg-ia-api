@@ -208,7 +208,11 @@ $router->add('PATCH','/admin/admins/{id}/status', fn($p)=> $adminCtrl->toggleAdm
 
 
 // Dispatch
+$basePath = $_ENV['BASE_PATH'] ?? '';
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
+if ($basePath !== '') {
+    $path = preg_replace('#^' . preg_quote($basePath, '#') . '#', '', $path) ?: '/';
+}
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 try {
